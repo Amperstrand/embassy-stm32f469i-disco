@@ -8,3 +8,6 @@ rustflags = [
 
 [env]
 DEFMT_LOG = "info"
+
+[profile.release]
+debug = 2

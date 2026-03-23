@@ -14,9 +14,8 @@ display = ["dep:stm32-fmc", "dep:nt35510", "dep:embedded-display-controller", "d
 touch = []
 
 [dependencies]
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "defmt"] }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19", features = ["defmt"] }
-defmt = "1.0"
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
 cortex-m = "0.7"
 embedded-hal = "1.0"
 
@@ -28,6 +27,7 @@ embedded-graphics = { version = "0.8", optional = true }
 
 [dev-dependencies]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+defmt = "1.0"
 defmt-rtt = "1.0"
 panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-graphics = "0.8"

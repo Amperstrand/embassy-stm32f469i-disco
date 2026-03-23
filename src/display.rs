@@ -115,7 +115,6 @@ impl SdramCtrl {
             Sdram::new_unchecked(fmc, SdramTargetBank::Bank1, Is42s32400f6 {});
         let mut delay = embassy_time::Delay;
         let mem = sdram.init(&mut delay);
-        defmt::info!("SDRAM initialized at {:#010x}", mem as usize);
         SdramCtrl { mem }
     }
 
@@ -260,7 +259,7 @@ unsafe fn dsi_init() {
     while reg32(DSI_BASE, WISR) & (1 << 12) == 0 && timeout > 0 {
         timeout -= 1;
     }
-    defmt::assert!(timeout > 0, "DSI regulator timeout");
+    assert!(timeout > 0, "DSI regulator timeout");
 
     // PLL: VCO = (8MHz / IDF=2) * NDIV=125 = 500MHz, LaneByteClk = 500MHz/ODF1 = 500MHz
     // NDIV[8:2], IDF[14:11], ODF[17:16]
@@ -278,7 +277,7 @@ unsafe fn dsi_init() {
     while reg32(DSI_BASE, WISR) & (1 << 8) == 0 && timeout > 0 {
         timeout -= 1;
     }
-    defmt::assert!(timeout > 0, "DSI PLL lock timeout");
+    assert!(timeout > 0, "DSI PLL lock timeout");
 
     // PHY params
     reg32_set(DSI_BASE, PCTLR, 1 << 0 | 1 << 1); // CKE=1, DEN=1
@@ -548,7 +547,6 @@ impl DisplayCtrl {
         core::mem::forget(reset_pin);
 
         // DSI PHY init
-        defmt::info!("DSI: PHY init...");
         unsafe {
             dsi_init();
         }
@@ -556,13 +554,12 @@ impl DisplayCtrl {
         // LTDC init
         let fb_slice: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
         let fb_addr = fb_slice.as_mut_ptr() as u32;
-        defmt::info!("LTDC: init, fb={:#010x}", fb_addr);
+        // LTDC init
         unsafe {
             ltdc_init(fb_addr);
         }
 
         // nt35510 panel init
-        defmt::info!("NT35510: panel init...");
         embassy_time::Delay.delay_ms(120);
         let mut panel = Nt35510::new();
         let mut dsi_adapter = RawDsi;
@@ -571,7 +568,6 @@ impl DisplayCtrl {
             .init_rgb565(&mut dsi_adapter, &mut delay)
             .expect("NT35510 init failed");
 
-        defmt::info!("Display initialized ({}x{} RGB565)", FB_WIDTH, FB_HEIGHT);
         DisplayCtrl {
             framebuffer: fb_slice,
         }
