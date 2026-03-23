@@ -1,0 +1,35 @@
+[package]
+name = "embassy-stm32f469i-disco"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Board support package for STM32F469I-Discovery with Embassy async framework"
+repository = "https://github.com/Amperstrand/embassy-stm32f469i-disco"
+keywords = ["embedded", "stm32", "discovery", "embassy", "async", "no-std"]
+categories = ["embedded", "hardware-support", "no-std"]
+
+[features]
+default = ["display", "touch"]
+display = ["dep:stm32-fmc", "dep:nt35510", "dep:embedded-display-controller", "dep:embedded-graphics"]
+touch = []
+
+[dependencies]
+embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "defmt"] }
+embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19", features = ["defmt"] }
+defmt = "1.0"
+cortex-m = "0.7"
+embedded-hal = "1.0"
+
+# Display dependencies
+stm32-fmc = { version = "0.4.0", features = ["sdram"], optional = true }
+nt35510 = { version = "0.1.0", optional = true }
+embedded-display-controller = { version = "0.2.0", optional = true }
+embedded-graphics = { version = "0.8", optional = true }
+
+[dev-dependencies]
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+defmt-rtt = "1.0"
+panic-probe = { version = "1.0", features = ["print-defmt"] }
+embedded-graphics = "0.8"
+cortex-m-rt = "0.7"
+cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
