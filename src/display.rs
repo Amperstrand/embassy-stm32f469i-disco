@@ -455,14 +455,46 @@ unsafe fn ltdc_init(fb_addr: u32) {
     reg32_set(LTDC_BASE, GCR, 1 << 0); // LTDCEN=1
 }
 
-// ── DsiHostCtrlIo adapter (raw FIFO writes) ────────────────────────────
+// ── DsiHostCtrlIo adapter (raw FIFO writes/reads) ──────────────────
 
 struct RawDsi;
 
 impl RawDsi {
     const GHCR: usize = 0x6C;
     const GPDR: usize = 0x70;
+    const GPSR: usize = 0x74;
     const GPDLR: usize = 0x4C8;
+
+    const CMDFE_BIT: u32 = 1 << 0;
+    const PRDFE_BIT: u32 = 1 << 4;
+    const RCB_BIT: u32 = 1 << 6;
+
+    unsafe fn wait_cmd_fifo_empty(&self) -> Result<(), ()> {
+        for _ in 0..100_000 {
+            if reg32(DSI_BASE, Self::GPSR) & Self::CMDFE_BIT != 0 {
+                return Ok(());
+            }
+        }
+        Err(())
+    }
+
+    unsafe fn wait_read_not_busy(&self) -> Result<(), ()> {
+        for _ in 0..100_000 {
+            if reg32(DSI_BASE, Self::GPSR) & Self::RCB_BIT == 0 {
+                return Ok(());
+            }
+        }
+        Err(())
+    }
+
+    unsafe fn wait_payload_fifo_not_empty(&self) -> Result<(), ()> {
+        for _ in 0..100_000 {
+            if reg32(DSI_BASE, Self::GPSR) & Self::PRDFE_BIT == 0 {
+                return Ok(());
+            }
+        }
+        Err(())
+    }
 }
 
 impl DsiHostCtrlIo for RawDsi {
@@ -471,28 +503,32 @@ impl DsiHostCtrlIo for RawDsi {
     fn write(&mut self, cmd: DsiWriteCommand) -> Result<(), Self::Error> {
         match cmd {
             DsiWriteCommand::DcsShortP1 { arg, data } => unsafe {
+                self.wait_cmd_fifo_empty()?;
                 reg32_write(
                     DSI_BASE,
                     Self::GPDR,
                     0x15 | ((arg as u32) << 8) | ((data as u32) << 16),
                 );
+                self.wait_cmd_fifo_empty()?;
             },
-            DsiWriteCommand::DcsLongWrite { arg, data } => {
-                unsafe {
-                    reg32_write(DSI_BASE, Self::GPDR, 0x39 | ((arg as u32) << 8));
-                    // Write payload bytes in pairs via GPDLR
-                    let mut i = 0;
-                    while i < data.len() {
-                        let b0 = data[i];
-                        let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
-                        reg32_write(DSI_BASE, Self::GPDLR, ((b1 as u32) << 8) | (b0 as u32));
-                        i += 2;
-                    }
-                    if data.len() % 2 != 0 {
-                        reg32_write(DSI_BASE, Self::GPDLR, 0);
-                    }
+            DsiWriteCommand::DcsLongWrite { arg, data } => unsafe {
+                self.wait_cmd_fifo_empty()?;
+
+                reg32_write(DSI_BASE, Self::GPDR, 0x39 | ((arg as u32) << 8));
+
+                let mut i = 0;
+                while i < data.len() {
+                    let b0 = data[i];
+                    let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
+                    reg32_write(DSI_BASE, Self::GPDLR, ((b1 as u32) << 8) | (b0 as u32));
+                    i += 2;
                 }
-            }
+                if data.len() % 2 != 0 {
+                    reg32_write(DSI_BASE, Self::GPDLR, 0);
+                }
+
+                self.wait_cmd_fifo_empty()?;
+            },
             _ => {}
         }
         Ok(())
@@ -500,24 +536,40 @@ impl DsiHostCtrlIo for RawDsi {
 
     fn read(&mut self, cmd: DsiReadCommand, buf: &mut [u8]) -> Result<(), Self::Error> {
         match cmd {
-            DsiReadCommand::DcsShort { arg } => {
-                unsafe {
-                    // Set max return packet size
-                    reg32_write(
-                        DSI_BASE,
-                        Self::GPDR,
-                        0x37 | (((buf.len() >> 8) & 0xFF) as u32) << 16
-                            | ((buf.len() & 0xFF) as u32) << 24,
-                    );
-                    // Send read command
-                    reg32_write(DSI_BASE, Self::GHCR, 0x06 | ((arg as u32) << 8));
-                    // Read response bytes
-                    for byte in buf.iter_mut() {
-                        let val = reg32(DSI_BASE, Self::GPDLR);
-                        *byte = (val & 0xFF) as u8;
+            DsiReadCommand::DcsShort { arg } => unsafe {
+                self.wait_cmd_fifo_empty()?;
+
+                reg32_write(
+                    DSI_BASE,
+                    Self::GPDR,
+                    0x37 | (((buf.len() >> 8) & 0xFF) as u32) << 16
+                        | ((buf.len() & 0xFF) as u32) << 24,
+                );
+
+                self.wait_cmd_fifo_empty()?;
+
+                reg32_write(DSI_BASE, Self::GHCR, 0x06 | ((arg as u32) << 8));
+
+                self.wait_read_not_busy()?;
+
+                for bytes in buf.chunks_exact_mut(4) {
+                    self.wait_payload_fifo_not_empty()?;
+                    let val = reg32(DSI_BASE, Self::GPDR);
+                    bytes[0] = (val & 0xFF) as u8;
+                    bytes[1] = ((val >> 8) & 0xFF) as u8;
+                    bytes[2] = ((val >> 16) & 0xFF) as u8;
+                    bytes[3] = ((val >> 24) & 0xFF) as u8;
+                }
+
+                let remainder = buf.chunks_exact_mut(4).into_remainder();
+                if !remainder.is_empty() {
+                    self.wait_payload_fifo_not_empty()?;
+                    let val = reg32(DSI_BASE, Self::GPDR);
+                    for (i, byte) in remainder.iter_mut().enumerate() {
+                        *byte = ((val >> (i * 8)) & 0xFF) as u8;
                     }
                 }
-            }
+            },
             _ => {}
         }
         Ok(())
