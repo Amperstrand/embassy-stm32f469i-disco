@@ -7,7 +7,6 @@ extern crate panic_probe;
 use embassy_stm32::Config;
 use embassy_stm32::interrupt::InterruptExt;
 use embassy_stm32f469i_disco::uart::UartCtrl;
-use nb::block;
 
 macro_rules! isr_stubs {
     () => {
@@ -53,7 +52,7 @@ fn clear_usart6_errors() {
     unsafe {
         let sr = core::ptr::read_volatile(USART6_BASE as *const u32);
         if sr & 0xF != 0 {
-            let _dr = core::ptr::read_volatile((USART6_BASE + 0x04) as *const u32);
+            let _ = core::ptr::read_volatile((USART6_BASE + 0x04) as *const u32);
         }
     }
 }
@@ -73,28 +72,52 @@ fn check_errors(test_name: &str) -> bool {
 }
 
 async fn loopback_test(name: &str, baud: u32, data: &[u8]) -> bool {
-    let p = embassy_stm32::init(Config::default());
     embassy_stm32::interrupt::USART6.disable();
-    let mut uart = UartCtrl::new_usart6(p.USART6, p.PG9, p.PG14, baud);
+
+    let _uart = UartCtrl::new_usart6(
+        unsafe { embassy_stm32::peripherals::USART6::steal() },
+        unsafe { embassy_stm32::peripherals::PG9::steal() },
+        unsafe { embassy_stm32::peripherals::PG14::steal() },
+        baud,
+    );
     embassy_time::Timer::after(embassy_time::Duration::from_millis(1)).await;
 
     let mut rx_buf = [0u8; 64];
     let len = data.len();
 
     for (i, &byte) in data.iter().enumerate() {
-        if block!(uart.write_byte(byte)).is_err() {
-            defmt::error!("HIL_RESULT:usart6_{}:FAIL (TX error at {}/{})", name, i, len);
+        let mut tx_ok = false;
+        for _ in 0..200_000u32 {
+            if read_usart6_sr() & (1 << 7) != 0 {
+                unsafe { core::ptr::write_volatile((USART6_BASE + 0x04) as *mut u32, byte as u32) };
+                tx_ok = true;
+                break;
+            }
+        }
+        if !tx_ok {
+            defmt::error!("HIL_RESULT:usart6_{}:FAIL (TX timeout at {}/{})", name, i, len);
             return false;
         }
-        match block!(uart.read_byte()) {
-            Ok(received) => { rx_buf[i] = received; }
-            Err(_) => {
-                defmt::error!("HIL_RESULT:usart6_{}:FAIL (RX error at {}/{})", name, i, len);
+
+        let mut rx_ok = false;
+        for _ in 0..2_000_000u32 {
+            let sr = read_usart6_sr();
+            if sr & (1 << 5) != 0 {
+                rx_buf[i] = unsafe { core::ptr::read_volatile((USART6_BASE + 0x04) as *const u32) } as u8;
+                rx_ok = true;
+                break;
+            }
+            if sr & 0xF != 0 {
+                let _ = unsafe { core::ptr::read_volatile((USART6_BASE + 0x04) as *const u32) };
+                defmt::error!("HIL_RESULT:usart6_{}:FAIL (RX error at byte {}/{}, SR={:#06X})", name, i + 1, len, sr);
                 return false;
             }
         }
+        if !rx_ok {
+            defmt::error!("HIL_RESULT:usart6_{}:FAIL (RX timeout at byte {}/{})", name, i + 1, len);
+            return false;
+        }
     }
-    block!(uart.flush()).ok();
 
     if &rx_buf[..len] == data {
         check_errors(name)
