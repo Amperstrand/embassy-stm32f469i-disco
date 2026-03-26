@@ -36,6 +36,16 @@ macro_rules! isr_stubs {
 
 isr_stubs!();
 
+async fn hil_done() -> ! {
+    embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
+    cortex_m::asm::bkpt();
+    loop { cortex_m::asm::nop(); }
+}
+
+fn read_reg(addr: usize) -> u32 {
+    unsafe { core::ptr::read_volatile(addr as *const u32) }
+}
+
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let mut config = embassy_stm32::Config::default();
@@ -69,24 +79,42 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
 
     if !sdram.test_quick() {
-        defmt::error!("HIL_RESULT:display:FAIL SDRAM prerequisite");
-        embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
-        cortex_m::asm::bkpt();
-        loop { cortex_m::asm::nop(); }
+        defmt::error!("HIL_RESULT:display:FAIL (SDRAM prerequisite)");
+        hil_done().await;
     }
 
     let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() });
     defmt::info!("Display init done, {}x{}", FB_WIDTH, FB_HEIGHT);
 
+    let ltdc_base: usize = 0x4001_6800;
+    let dsi_base: usize = 0x4001_6C00;
+
+    let gcr = read_reg(ltdc_base + 0x18);
+    let ltdcen = (gcr >> 0) & 1;
+    defmt::info!("LTDC GCR={:#010X} LTDCEN={}", gcr, ltdcen);
+
+    let cdsr = read_reg(ltdc_base + 0x24);
+    let vsync = (cdsr >> 3) & 1;
+    let hsync = (cdsr >> 2) & 1;
+    defmt::info!("LTDC CDSR={:#010X} VSYNC={} HSYNC={}", cdsr, vsync, hsync);
+
+    let wisr = read_reg(dsi_base + 0x40C);
+    let pll_lock = (wisr >> 8) & 1;
+    let reg_ready = (wisr >> 12) & 1;
+    defmt::info!("DSI WISR={:#010X} PLL_LOCK={} REG_RDY={}", wisr, pll_lock, reg_ready);
+
     let mut fb = display.fb();
     fb.clear(Rgb565::new(0, 31, 0));
-
     embassy_time::Timer::after(embassy_time::Duration::from_secs(2)).await;
-
     fb.clear(Rgb565::new(0, 0, 0));
-    defmt::info!("HIL_RESULT:display:PASS (screen should have flashed green for 2s)");
 
-    embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
-    cortex_m::asm::bkpt();
-    loop { cortex_m::asm::nop(); }
+    if ltdcen == 1 && vsync == 1 && hsync == 1 && pll_lock == 1 && reg_ready == 1 {
+        defmt::info!("HIL_RESULT:display:PASS (LTDC active, DSI locked, green flash OK)");
+    } else if ltdcen == 1 {
+        defmt::info!("HIL_RESULT:display:PARTIAL (LTDC enabled but sync/DSI issues)");
+    } else {
+        defmt::error!("HIL_RESULT:display:FAIL (LTDC not enabled)");
+    }
+
+    hil_done().await;
 }

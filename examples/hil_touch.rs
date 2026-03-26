@@ -32,6 +32,12 @@ macro_rules! isr_stubs {
 
 isr_stubs!();
 
+async fn hil_done() -> ! {
+    embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
+    cortex_m::asm::bkpt();
+    loop { cortex_m::asm::nop(); }
+}
+
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = embassy_stm32::init(Config::default());
@@ -48,14 +54,34 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     match touch_ctrl.read_chip_id(&mut touch_i2c) {
         Ok(chip_id) => {
-            defmt::info!("HIL_RESULT:touch:PASS (chip_id={:02X})", chip_id);
+            defmt::info!("HIL_RESULT:touch_chip_id:PASS (chip_id={:02X})", chip_id);
         }
         Err(_) => {
-            defmt::warn!("HIL_RESULT:touch:SKIP (no FT6X06 detected on I2C1)");
+            defmt::warn!("HIL_RESULT:touch_chip_id:SKIP (no FT6X06 on I2C1)");
+            hil_done().await;
         }
     }
 
-    embassy_time::Timer::after(embassy_time::Duration::from_millis(10)).await;
-    cortex_m::asm::bkpt();
-    loop { cortex_m::asm::nop(); }
+    match touch_ctrl.td_status(&mut touch_i2c) {
+        Ok(status) => {
+            let touches = status & 0x0F;
+            if touches == 0 {
+                defmt::info!("HIL_RESULT:touch_no_touch:PASS (td_status=0x{:02X})", status);
+            } else {
+                defmt::warn!("HIL_RESULT:touch_no_touch:WARN (td_status=0x{:02X}, {} touches with no finger)", status, touches);
+            }
+        }
+        Err(_) => {
+            defmt::error!("HIL_RESULT:touch_no_touch:FAIL (I2C error)");
+        }
+    }
+
+    let mut fw_buf = [0u8; 1];
+    if touch_i2c.blocking_write_read(0x38, &[0xA6], &mut fw_buf).is_ok() {
+        defmt::info!("HIL_RESULT:touch_fw_version:PASS (fw={:02X})", fw_buf[0]);
+    } else {
+        defmt::error!("HIL_RESULT:touch_fw_version:FAIL (I2C read error)");
+    }
+
+    hil_done().await;
 }
