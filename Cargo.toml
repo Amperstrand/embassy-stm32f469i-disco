@@ -12,6 +12,7 @@ categories = ["embedded", "hardware-support", "no-std"]
 default = ["display", "touch"]
 display = ["dep:stm32-fmc", "dep:nt35510", "dep:embedded-display-controller", "dep:embedded-graphics"]
 touch = []
+uart = ["dep:embedded-hal-02", "dep:nb"]
 
 [dependencies]
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
@@ -25,6 +26,10 @@ nt35510 = { version = "0.1.0", optional = true }
 embedded-display-controller = { version = "0.2.0", optional = true }
 embedded-graphics = { version = "0.8", optional = true }
 
+# UART dependencies
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.7", optional = true }
+nb = { version = "1.1", optional = true }
+
 [dev-dependencies]
 embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread", "defmt"] }
 defmt = "1.0"
@@ -33,3 +38,5 @@ panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-graphics = "0.8"
 cortex-m-rt = "0.7"
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
+embedded-hal-02 = { package = "embedded-hal", version = "0.2.7" }
+nb = "1.1"
