@@ -25,10 +25,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 1: PA0 input mode (user button)
     defmt::info!("TEST pa0_input_mode: RUNNING");
-    let button = embassy_stm32::gpio::Input::new(
-        p.PA0,
-        embassy_stm32::gpio::Pull::Down,
-    );
+    let button = embassy_stm32::gpio::Input::new(p.PA0, embassy_stm32::gpio::Pull::Down);
     let initial = button.is_high();
     defmt::info!("  PA0 initial state: {}", initial);
     pass("pa0_input_mode");

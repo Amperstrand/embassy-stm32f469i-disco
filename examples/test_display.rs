@@ -95,7 +95,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 1: SDRAM init
     defmt::info!("TEST sdram_init: RUNNING");
-    let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
+    let sdram = SdramCtrl::new(
+        &mut unsafe { embassy_stm32::Peripherals::steal() },
+        180_000_000,
+    );
     if sdram.test_quick() {
         pass("sdram_init");
     } else {
@@ -115,13 +118,19 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 4: Display init (includes DSI PHY + LTDC + NT35510)
     defmt::info!("TEST display_init: RUNNING");
-    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, embassy_stm32f469i_disco::BoardHint::Auto);
+    let mut display = DisplayCtrl::new(
+        &sdram,
+        unsafe { p.PH7.clone_unchecked() },
+        embassy_stm32f469i_disco::BoardHint::Auto,
+    );
     pass("display_init");
 
     // Test 4b: Display detect (panel identification)
     defmt::info!("TEST display_detect: RUNNING");
     {
-        match embassy_stm32f469i_disco::display::detect_panel(embassy_stm32f469i_disco::BoardHint::Auto) {
+        match embassy_stm32f469i_disco::display::detect_panel(
+            embassy_stm32f469i_disco::BoardHint::Auto,
+        ) {
             embassy_stm32f469i_disco::LcdController::Nt35510 => {
                 defmt::info!("Detected NT35510 panel");
                 pass("display_detect");
@@ -176,10 +185,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let g = ((frame as u32 * 255) / 10) as u8;
             let b = (255 - row as u32 * 255 / FB_HEIGHT as u32) as u8;
             let color = Rgb565::new(r, g, b);
-            let rect = Rectangle::new(
-                Point::new(0, row as i32),
-                Size::new(FB_WIDTH as u32, 1),
-            );
+            let rect = Rectangle::new(Point::new(0, row as i32), Size::new(FB_WIDTH as u32, 1));
             rect.into_styled(PrimitiveStyle::with_fill(color))
                 .draw(&mut fb)
                 .ok();
@@ -209,10 +215,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
     for _ in 0..30 {
         ticker.next().await;
         let color = if on { Rgb565::RED } else { Rgb565::GREEN };
-        Rectangle::new(Point::new(0, 0), Size::new(FB_WIDTH as u32, FB_HEIGHT as u32))
-            .into_styled(PrimitiveStyle::with_fill(color))
-            .draw(&mut fb)
-            .ok();
+        Rectangle::new(
+            Point::new(0, 0),
+            Size::new(FB_WIDTH as u32, FB_HEIGHT as u32),
+        )
+        .into_styled(PrimitiveStyle::with_fill(color))
+        .draw(&mut fb)
+        .ok();
         on = !on;
     }
     pass("rapid_refresh");
@@ -257,10 +266,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let g = ((hue + row as u32 * 3 + 85) % 256) as u8;
             let b = ((hue + row as u32 * 3 + 170) % 256) as u8;
             let color = Rgb565::new(r, g, b);
-            let rect = Rectangle::new(
-                Point::new(0, row as i32),
-                Size::new(FB_WIDTH as u32, 1),
-            );
+            let rect = Rectangle::new(Point::new(0, row as i32), Size::new(FB_WIDTH as u32, 1));
             rect.into_styled(PrimitiveStyle::with_fill(color))
                 .draw(&mut fb)
                 .ok();

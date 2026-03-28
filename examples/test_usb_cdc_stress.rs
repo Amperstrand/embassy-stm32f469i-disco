@@ -10,8 +10,8 @@ use embassy_stm32::usb;
 use embassy_stm32::{peripherals, Config};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
-use embassy_usb::Builder;
 use embassy_usb::driver::EndpointError;
+use embassy_usb::Builder;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -87,26 +87,23 @@ async fn main(_spawner: Spawner) {
         led.set_high();
         let mut rx_buf = [0u8; 256];
         loop {
-            match embassy_futures::select::select(
-                class.read_packet(&mut rx_buf),
-                heartbeat.next(),
-            ).await {
-                embassy_futures::select::Either::First(result) => {
-                    match result {
-                        Ok(n) => {
-                            if class.write_packet(&rx_buf[..n]).await.is_err() {
-                                defmt::error!("write_packet failed");
-                            }
-                        }
-                        Err(EndpointError::BufferOverflow) => {
-                            defmt::error!("rx buffer overflow");
-                        }
-                        Err(EndpointError::Disabled) => {
-                            defmt::warn!("USB disconnected");
-                            break;
+            match embassy_futures::select::select(class.read_packet(&mut rx_buf), heartbeat.next())
+                .await
+            {
+                embassy_futures::select::Either::First(result) => match result {
+                    Ok(n) => {
+                        if class.write_packet(&rx_buf[..n]).await.is_err() {
+                            defmt::error!("write_packet failed");
                         }
                     }
-                }
+                    Err(EndpointError::BufferOverflow) => {
+                        defmt::error!("rx buffer overflow");
+                    }
+                    Err(EndpointError::Disabled) => {
+                        defmt::warn!("USB disconnected");
+                        break;
+                    }
+                },
                 embassy_futures::select::Either::Second(_) => {
                     led.toggle();
                 }

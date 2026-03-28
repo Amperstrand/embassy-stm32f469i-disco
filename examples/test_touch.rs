@@ -32,12 +32,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 1: I2C1 init
     defmt::info!("TEST i2c_init: RUNNING");
-    let mut i2c = i2c::I2c::new_blocking(
-        p.I2C1,
-        p.PB8,
-        p.PB9,
-        embassy_stm32::i2c::Config::default(),
-    );
+    let mut i2c =
+        i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, embassy_stm32::i2c::Config::default());
     pass("i2c_init");
 
     let touch = TouchCtrl::new();
@@ -65,7 +61,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
     match touch.td_status(&mut i2c) {
         Ok(status) => {
             defmt::info!("  TD status: {}", status);
-            // 0 means no touch detected — expected when idle
             if status == 0 {
                 pass("td_status_idle");
             } else {
@@ -78,7 +73,28 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 4: Touch read (interactive)
+    // Test 4: I2C bus scan (probe known addresses)
+    defmt::info!("TEST i2c_bus_scan: RUNNING");
+    {
+        use embedded_hal_02::blocking::i2c::Read;
+        let mut found = 0u8;
+        let scan_addrs: [u8; 3] = [0x38, 0x39, 0x5C];
+        for &addr in &scan_addrs {
+            let mut buf = [0u8; 1];
+            if let Ok(()) = i2c.read(addr, &mut buf) {
+                defmt::info!("  Device at 0x{:02X} (data=0x{:02X})", addr, buf[0]);
+                found += 1;
+            }
+        }
+        if found > 0 {
+            defmt::info!("  {} device(s) found on I2C1", found);
+            pass("i2c_bus_scan");
+        } else {
+            fail("i2c_bus_scan", "no devices found at expected addresses");
+        }
+    }
+
+    // Test 5: Touch read (interactive)
     defmt::info!("TEST touch_read_interactive: RUNNING");
     defmt::info!("  >>> Touch the screen within 10 seconds <<<");
     {

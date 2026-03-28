@@ -8,7 +8,7 @@ use embassy_stm32::rcc::{
     AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv, PllRDiv,
     PllSource, Sysclk,
 };
-use embassy_stm32f469i_disco::{display::SdramCtrl, DisplayCtrl, FB_WIDTH, FB_HEIGHT};
+use embassy_stm32f469i_disco::{display::SdramCtrl, DisplayCtrl, FB_HEIGHT, FB_WIDTH};
 use embassy_time::Ticker;
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyleBuilder},
@@ -83,10 +83,17 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let p = embassy_stm32::init(config);
     defmt::info!("embassy init done");
 
-    let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
+    let sdram = SdramCtrl::new(
+        &mut unsafe { embassy_stm32::Peripherals::steal() },
+        180_000_000,
+    );
     defmt::info!("SDRAM test: {}", sdram.test_quick());
 
-    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, embassy_stm32f469i_disco::BoardHint::Auto);
+    let mut display = DisplayCtrl::new(
+        &sdram,
+        unsafe { p.PH7.clone_unchecked() },
+        embassy_stm32f469i_disco::BoardHint::Auto,
+    );
     defmt::info!("Display init done, {}x{}", FB_WIDTH, FB_HEIGHT);
 
     let mut fb = display.fb();

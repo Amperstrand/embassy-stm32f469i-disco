@@ -5,28 +5,67 @@ Board support package for the STM32F469I-Discovery development board, built on t
 ## Build
 
 ```bash
-cargo build
-cargo build --example display_blinky
+cargo build --target thumbv7em-none-eabihf
+cargo build --target thumbv7em-none-eabihf --example display_blinky
+cargo build --target thumbv7em-none-eabihf --examples
 ```
 
 ## Run Examples
 
+Most examples require 180MHz PLL (for SDRAM/display). Use probe-rs:
+
 ```bash
-probe-rs run --chip STM32F469NIHx --example blink
 probe-rs run --chip STM32F469NIHx --example display_blinky
-probe-rs run --chip STM32F469NIHx --example sdram_test
+probe-rs run --chip STM32F469NIHx --example hw_diag
 ```
+
+USB CDC tests use 84MHz PLL (incompatible with display). Use `st-flash` — **do NOT use probe-rs during USB testing**:
+
+```bash
+./run_usb_tests.sh
+```
+
+## CI
+
+GitHub Actions runs on push/PR: build library + all examples, `cargo fmt`, `cargo clippy -D warnings`. Zero warnings required.
 
 ## Architecture
 
 ```
 src/
-└── lib.rs    — SdramCtrl (FMC + IS42S32400F-6BL), DisplayCtrl (DSI/LTDC/NT35510), TouchCtrl (FT6X06)
+├── lib.rs       — Exports: DisplayCtrl, FramebufferView, SdramCtrl, TouchCtrl,
+│                  BoardHint, LcdController, FB_HEIGHT, FB_WIDTH
+└── display.rs   — SdramCtrl (FMC + IS42S32400F-6BL), DisplayCtrl (DSI/LTDC/NT35510),
+                   BoardHint, LcdController, detect_panel()
 
 examples/
-├── blink.rs              — Basic LED blink
-├── display_blinky.rs     — Display init + color cycling
-└── sdram_test.rs         — SDRAM write/read verification
+├── blink.rs                 — Basic LED blink
+├── display_blinky.rs        — Display init + color cycling
+├── hw_diag.rs               — On-screen hardware diagnostics (~38 tests, two-phase)
+│
+├── test_led.rs              — LED tests (16)
+├── test_gpio.rs             — GPIO tests (5)
+├── test_async_timer.rs      — Timer/Ticker/PWM tests (10)
+├── test_rng.rs              — Hardware RNG tests (3)
+├── test_adc.rs              — ADC internal channel tests (2)
+├── test_sdram.rs            — SDRAM fast tests (14)
+├── test_sdram_full.rs       — SDRAM exhaustive tests (13)
+├── test_display.rs          — Display/DSI/LTDC tests (15)
+├── test_touch.rs            — FT6X06 touch tests (5)
+├── test_uart.rs             — USART1 tests (4)
+├── test_dma.rs              — DMA2 M2M tests (5)
+├── test_usb.rs              — USB GPIO pin tests (3)
+├── test_usb_cdc.rs          — USB CDC connectivity tests (4, 84MHz PLL)
+├── test_usb_cdc_stress.rs   — USB CDC continuous echo (stress firmware)
+├── test_sdram_soak.rs       — SDRAM continuous stress (soak firmware)
+└── test_usb_soak.rs         — GPIO soak test (continuous toggle)
+
+tests/
+├── usb_cdc_stress.py        — Host-side USB stress test (pyserial, 600 packets)
+└── results/                 — Stress test JSON results (gitignored)
+
+run_tests.sh                 — probe-rs based runner (all non-USB tests)
+run_usb_tests.sh             — st-flash based runner (USB CDC stress test)
 ```
 
 ## Hardware
@@ -35,6 +74,7 @@ examples/
 - Display: 480x800 RGB565 LCD via DSI/LTDC (NT35510 controller)
 - SDRAM: 16MB via FMC (IS42S32400F-6BL)
 - Touch: FT6X06 capacitive touch via I2C1 (PB8=SDA, PB9=SCL)
+- USB: OTG FS (PA11=DM, PA12=DP) — CDC-ACM
 
 ## Key Dependencies
 
@@ -43,6 +83,50 @@ examples/
 - `nt35510` 0.1.0 — DSI display controller
 - `embedded-display-controller` 0.2.0
 - `embedded-graphics` 0.8
+- `embassy-usb` @ `84444a19` — USB CDC
+- `stm32-metapac` 21 — Raw peripheral access (ADC, DMA, RNG)
+
+## Clock Configurations
+
+| Config | Sysclk | USB 48MHz | Used by |
+|--------|--------|-----------|---------|
+| 180MHz | HSE/8 * 360 / 2 | PLLSAI/7 | SDRAM, display, touch, hw_diag |
+| 84MHz | HSE/4 * 168 / 2 | PLL1_Q/7 | USB CDC tests |
+
+These are incompatible — USB tests cannot run display, and vice versa.
+
+## Test Output Format
+
+All test examples output RTT-compatible lines:
+```
+TEST <name>: PASS
+TEST <name>: FAIL <reason>
+SUMMARY: N/M passed
+ALL TESTS PASSED
+```
+
+`run_tests.sh` parses these for automated pass/fail reporting.
+
+## USB CDC Stress Test
+
+The stress test validates USB reliability without debugger interference:
+
+```bash
+# Full pipeline: build → flash → reset → stress test
+./run_usb_tests.sh
+
+# Individual steps
+./run_usb_tests.sh --build-only    # build firmware
+./run_usb_tests.sh --flash-only    # flash via st-flash
+./run_usb_tests.sh --test-only     # run host-side test (already flashed)
+./run_usb_tests.sh --count 1000    # send 1000 packets
+./run_usb_tests.sh --find          # auto-detect port by VID:PID
+
+# Standalone host-side script
+python3 tests/usb_cdc_stress.py --port /dev/ttyACM0 --count 600
+```
+
+Requirements: `st-flash` (stlink-tools), `arm-none-eabi-objcopy`, `pyserial`.
 
 ## Known-Good Pins
 
@@ -50,6 +134,7 @@ examples/
 |--------|--------|-------|
 | `3646aa8` | `main` | Fixed RawDsi::read() register and FIFO flow control |
 | `a407fcd` | `feat/hil-tests` | HIL test suite + USART6 UART module. **Used by micronuts firmware** |
+| `31b81d4` | `main` | Full test suite, CI, USB stress test, zero warnings |
 
 The `main` branch is recommended for new projects. The `feat/hil-tests` branch adds HIL test infrastructure but is functionally equivalent for library use.
 
@@ -59,7 +144,7 @@ All testing performed on STM32F469I-Discovery board (B08 revision, NT35510 panel
 
 ### Test Date: 2026-03-26
 
-Testing performed by the **micronuts** firmware (Amperstrand/micronuts), which depends on this BSP for display, SDRAM, and touch initialization. The BSP itself has HIL test examples built but not yet run independently.
+Testing performed by the **micronuts** firmware (Amperstrand/micronuts), which depends on this BSP for display, SDRAM, and touch initialization. The BSP's own test suite is built but not yet run independently on hardware.
 
 | Subsystem | Status | Evidence | Notes |
 |-----------|--------|----------|-------|
@@ -76,8 +161,7 @@ Testing performed by the **micronuts** firmware (Amperstrand/micronuts), which d
 |-----------|--------|-------|
 | **DSI reads** | FAIL | `DisplayCtrl::probe()` fails consistently (BTA/PHY timing). Workaround: `BoardHint::ForceNt35510` skips probe. Writes work fine, display renders correctly. Not needed for normal operation. |
 | **SDIO** | NOT TESTED | No microSD card testing. Out of scope for Cashu wallet use case. |
-| **HIL test suite** | NOT RUN | `hil_test_sync` example is built but has not been flashed and run on hardware. Known issues: double embassy_stm32::init() call (fixed in a407fcd), PLLSAI not configured (fixed in d4d7d08). |
-| **Examples** | NOT RUN | `display_blinky`, `sdram_test` examples are built but not run on hardware. Verified indirectly through micronuts firmware which uses the same BSP APIs. |
+| **Test suite** | NOT RUN | All 15 test examples + hw_diag build clean (zero warnings, zero clippy errors) but have not been flashed and run on hardware. Verified indirectly through micronuts firmware. |
 
 ## Known Issues
 
@@ -98,20 +182,20 @@ The BSP itself does NOT apply this filter — consumers must implement their own
 
 DSI command-mode reads (used for panel auto-detection) fail with "DSI read error". DSI writes work fine.
 
-**Workaround**: The `DisplayCtrl::new()` on `main` branch skips probe. No impact on normal display operation.
+**Workaround**: `DisplayCtrl::new()` with `BoardHint::Auto` attempts probe up to 3 retries, falls back to NT35510 if inconclusive. Use `BoardHint::ForceNt35510` to skip probe entirely.
 
 ### probe-rs Breaks USB Enumeration
 
-When `probe-rs run` is attached for RTT defmt logging, it halts the CPU periodically for RTT reads. This causes USB disconnects. The firmware's USB CDC works correctly when probe-rs is NOT attached.
+When `probe-rs run` is attached for RTT defmt logging, RTT may be left in blocking mode on disconnect (probe-rs#2425). Any subsequent `defmt::info!()` call acquires a critical section and spin-loops waiting for the probe to drain the buffer. This blocks the USB ISR, causing host-side disconnects.
 
-**Correct test methodology**:
+**Correct USB test methodology** (used by `run_usb_tests.sh`):
 ```bash
 # Flash with st-flash (not probe-rs)
 arm-none-eabi-objcopy -O binary firmware firmware.bin
 st-flash --connect-under-reset write firmware.bin 0x08000000
 st-flash --connect-under-reset reset
-# Wait 15s for boot + self-test
-# Test USB via pyserial — do NOT attach probe-rs
+sleep 15  # wait for USB enumeration
+python3 tests/usb_cdc_stress.py --port /dev/ttyACM0
 ```
 
 ### ST-LINK Recovery After USB Active
@@ -142,8 +226,10 @@ We concluded the claimed EPENA hang may be timing-dependent or caused by probe-r
 | LTDC | PC0,1,2,3,6,7,8,9,10, PA8,9,10, PH0,1,2,3,4, PI10,11,12 | LCD timing and data |
 | I2C1 (touch) | PB8 (SDA), PB9 (SCL) | FT6X06 touch controller |
 | LCD reset | PH7 | NT35510 panel reset |
+| USART1 (test) | PA9 (TX), PA10 (RX) | Test UART |
 | USART6 (scanner) | PG14 (TX), PG9 (RX) | NOT consumed by SDRAM — available for QR scanner |
 | USB OTG FS | PA11 (DM), PA12 (DP) | CDC-ACM |
+| LEDs | PG6 (green), PD4 (orange), PD5 (red), PK3 (blue) | Active low |
 
 USART6 PG14/PG9 are exposed via `SdramRemainders` but not documented in PIN-CONSUMPTION.md on the old sync BSP (#16).
 

@@ -4,8 +4,8 @@
 extern crate defmt_rtt;
 extern crate panic_probe;
 
-use core::sync::atomic::{AtomicUsize, Ordering};
 use core::fmt::Write as FmtWrite;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use embedded_hal_02::blocking::serial::Write;
 
 use embassy_stm32::Config;
@@ -88,7 +88,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("TEST usart1_fmt_write: RUNNING");
     {
         let mut writer = UartFmtWriter(&mut tx);
-        let result = write!(writer, "uart ok {} {}\r\n", 42u32, true);
+        let result = write!(writer, "uart ok {} true\r\n", 42u32);
         Timer::after(embassy_time::Duration::from_millis(5)).await;
         match result {
             Ok(_) => pass("usart1_fmt_write"),

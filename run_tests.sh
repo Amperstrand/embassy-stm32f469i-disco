@@ -234,7 +234,7 @@ run_all() {
         exit 2
     fi
 
-    local tests=("test_led" "test_sdram" "test_gpio" "test_display" "test_uart" "test_dma" "test_rng" "test_adc" "test_async_timer" "test_usb" "test_usb_cdc")
+    local tests=("test_led" "test_sdram" "test_gpio" "test_display" "test_uart" "test_dma" "test_rng" "test_adc" "test_async_timer" "test_usb")
 
     for test in "${tests[@]}"; do
         local timeout=$TIMEOUT_DEFAULT
@@ -320,14 +320,15 @@ if [[ "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
     echo "  test_led           - LED on/off, toggle, patterns (16 tests)"
     echo "  test_sdram         - Fast SDRAM spot-checks (~10s, 14 tests)"
     echo "  test_sdram_full    - Exhaustive SDRAM tests, all 16MB (~3-5min, 13 tests)"
+    echo "  test_sdram_soak    - SDRAM continuous stress (infinite loop, LED heartbeat)"
     echo "  test_gpio          - PA0 button input, GPIO output echo (5 tests)"
     echo "  test_display       - DSI LCD init, color fills, gradient, continuous (13 tests)"
-    echo "  test_touch         - FT6X06 touch controller via I2C (4 tests, interactive)"
+    echo "  test_touch         - FT6X06 touch controller via I2C (5 tests, interactive)"
     echo "  test_uart          - USART1 TX, multi-byte, fmt write (4 tests)"
-    echo "  test_dma           - DMA2 M2M transfers (4 tests)"
-    echo "  test_async_timer   - Embassy Timer, Ticker, Signal, DWT, PWM (8 tests)"
+    echo "  test_dma           - DMA2 M2M transfers (5 tests)"
+    echo "  test_async_timer   - Embassy Timer, Ticker, Signal, DWT, PWM (10 tests)"
     echo "  test_usb           - USB GPIO pin tests (3 tests)"
-    echo "  test_usb_cdc       - USB CDC echo + sustained poll (4 tests, needs 84MHz PLL)"
+    echo "  test_usb_cdc       - USB CDC echo + sustained poll (4 tests, needs 84MHz PLL, use st-flash)"
     echo "  test_rng           - Hardware RNG (3 tests)"
     echo "  test_adc           - ADC internal temp + VREFINT (2 tests)"
     echo "  hw_diag            - On-screen hardware diagnostics (~38 tests)"
@@ -352,10 +353,11 @@ else
     } > "$REPORT_FILE"
 
     case "$TARGET" in
-        test_led|test_sdram|test_display|test_gpio|test_touch|test_async_timer|test_usb|test_usb_cdc|test_sdram_full|test_uart|test_dma|test_rng|test_adc|hw_diag)
+        test_led|test_sdram|test_display|test_gpio|test_touch|test_async_timer|test_usb|test_usb_cdc|test_sdram_full|test_sdram_soak|test_uart|test_dma|test_rng|test_adc|hw_diag)
             timeout=$TIMEOUT_DEFAULT
             [[ "$TARGET" == "test_sdram" ]] && timeout=60
             [[ "$TARGET" == "test_sdram_full" ]] && timeout=600
+            [[ "$TARGET" == "test_sdram_soak" ]] && timeout=600
             [[ "$TARGET" == "test_display" ]] && timeout=120
             [[ "$TARGET" == "test_gpio" ]] && timeout=30
             [[ "$TARGET" == "test_led" ]] && timeout=30
@@ -372,7 +374,7 @@ else
             ;;
         *)
             echo -e "${RED}Unknown test: ${TARGET}${NC}"
-            echo "Available: test_led, test_sdram, test_sdram_full, test_display, test_gpio, test_touch, test_uart, test_dma, test_rng, test_adc, test_async_timer, test_usb, test_usb_cdc, hw_diag, all"
+            echo "Available: test_led, test_sdram, test_sdram_full, test_sdram_soak, test_display, test_gpio, test_touch, test_uart, test_dma, test_rng, test_adc, test_async_timer, test_usb, test_usb_cdc, hw_diag, all"
             exit 1
             ;;
     esac

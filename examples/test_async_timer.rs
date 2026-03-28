@@ -6,9 +6,9 @@ extern crate panic_probe;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use embassy_stm32::Config;
 use embassy_stm32::timer::low_level::CountingMode;
 use embassy_stm32::timer::Channel;
+use embassy_stm32::Config;
 use embassy_time::{Duration, Ticker, Timer};
 use embedded_hal_02::Pwm;
 
@@ -40,7 +40,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("=== Async Timer Test Suite ===");
 
     unsafe {
-        cortex_m::peripheral::Peripherals::steal().DWT.enable_cycle_counter();
+        cortex_m::peripheral::Peripherals::steal()
+            .DWT
+            .enable_cycle_counter();
     }
 
     // Test 1: Timer::after(1ms)
@@ -51,7 +53,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let elapsed = dwt_cycles().wrapping_sub(start);
         let us = cycles_to_us(elapsed);
         defmt::info!("  1ms delay: {}us", us);
-        if us >= 900 && us <= 1500 {
+        if (900..=1500).contains(&us) {
             pass("timer_1ms");
         } else {
             fail("timer_1ms", "1ms delay out of range");
@@ -66,7 +68,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let elapsed = dwt_cycles().wrapping_sub(start);
         let ms = cycles_to_us(elapsed) / 1000;
         defmt::info!("  100ms delay: {}ms", ms);
-        if ms >= 95 && ms <= 120 {
+        if (95..=120).contains(&ms) {
             pass("timer_100ms");
         } else {
             fail("timer_100ms", "100ms delay out of range");
@@ -80,10 +82,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let mut intervals = [0u32; 5];
         let mut prev = dwt_cycles();
 
-        for i in 0..5 {
+        for interval_us in intervals.iter_mut() {
             ticker.next().await;
             let now = dwt_cycles();
-            intervals[i] = cycles_to_us(now.wrapping_sub(prev));
+            *interval_us = cycles_to_us(now.wrapping_sub(prev));
             prev = now;
         }
 
@@ -91,7 +93,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         for (i, &interval_us) in intervals.iter().enumerate() {
             let ms = interval_us / 1000;
             defmt::info!("  ticker interval {}: {}ms", i, ms);
-            if ms < 450 || ms > 600 {
+            if !(450..=600).contains(&ms) {
                 ok = false;
             }
         }
@@ -116,7 +118,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let ms = cycles_to_us(elapsed) / 1000;
         defmt::info!("  select(a=50ms, b=100ms) resolved in {}ms", ms);
         // Should resolve in ~50ms (the shorter timer)
-        if ms >= 40 && ms <= 80 {
+        if (40..=80).contains(&ms) {
             pass("concurrent_timers");
         } else {
             fail("concurrent_timers", "select resolved at wrong time");
@@ -142,7 +144,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         SIGNAL.signal(42);
         let result = SIGNAL.try_take();
         match result {
-            Some(val) if val == 42 => {
+            Some(42) => {
                 pass("signal_notify");
             }
             _ => {
@@ -226,7 +228,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let elapsed = dwt_cycles().wrapping_sub(start);
         let us = cycles_to_us(elapsed);
         defmt::info!("  500us delay: {}us", us);
-        if us >= 400 && us <= 700 {
+        if (400..=700).contains(&us) {
             pass("timer_500us");
         } else {
             fail("timer_500us", "500us delay out of range");

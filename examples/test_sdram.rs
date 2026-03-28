@@ -120,7 +120,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let words = embassy_stm32f469i_disco::display::SDRAM_SIZE_BYTES / 4;
     defmt::info!("SDRAM: base={:#010X} words={}", base, words);
 
-    let ram: &mut [u32] = unsafe { core::slice::from_raw_parts_mut(sdram.base_address() as *mut u32, words) };
+    let ram: &mut [u32] =
+        unsafe { core::slice::from_raw_parts_mut(sdram.base_address() as *mut u32, words) };
 
     const WIN: usize = 65536;
 

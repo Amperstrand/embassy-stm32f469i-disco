@@ -35,7 +35,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         led.toggle();
         dm.toggle();
         count += 1;
-        if count % 120 == 0 {
+        if count.is_multiple_of(120) {
             defmt::info!("soak: {} heartbeats", count);
         }
     }

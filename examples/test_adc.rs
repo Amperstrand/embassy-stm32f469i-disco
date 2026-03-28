@@ -47,7 +47,10 @@ unsafe fn adc1_read_channel(channel: u8) -> u16 {
     });
 
     adc.smpr2().write(|w| {
-        w.set_smp(channel as usize, stm32_metapac::adc::vals::SampleTime::CYCLES480);
+        w.set_smp(
+            channel as usize,
+            stm32_metapac::adc::vals::SampleTime::CYCLES480,
+        );
     });
 
     adc.cr2().modify(|w| w.set_adon(true));
@@ -56,8 +59,7 @@ unsafe fn adc1_read_channel(channel: u8) -> u16 {
     adc.cr2().modify(|w| w.set_swstart(true));
     while !adc.sr().read().eoc() {}
 
-    let val = adc.dr().read().0 as u16;
-    val
+    adc.dr().read().0 as u16
 }
 
 #[embassy_executor::main]

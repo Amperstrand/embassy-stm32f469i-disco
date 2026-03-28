@@ -10,14 +10,12 @@ use embassy_futures::select::{select, Either};
 use embassy_stm32::rcc::*;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::usb::{Driver, Instance};
-use embassy_stm32::{bind_interrupts, peripherals, usb};
 use embassy_stm32::Config;
+use embassy_stm32::{bind_interrupts, peripherals, usb};
 use embassy_time::Timer;
-use embassy_usb::Builder;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
-
-
+use embassy_usb::Builder;
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;

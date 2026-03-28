@@ -468,7 +468,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
     {
         let mut ok = true;
         let hw_count = 16384;
-        let ram_hw: &mut [u16] = unsafe { core::slice::from_raw_parts_mut(base as *mut u16, hw_count) };
+        let ram_hw: &mut [u16] =
+            unsafe { core::slice::from_raw_parts_mut(base as *mut u16, hw_count) };
         for (i, hw) in ram_hw.iter_mut().enumerate() {
             *hw = ((i & 0xFFFF) as u16).wrapping_add(1);
         }
