@@ -66,18 +66,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("=== ADC Test Suite ===");
 
-    unsafe {
-        stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
-    }
+    stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
 
     // Test 1: Read temperature sensor (channel 18 on F469)
     defmt::info!("TEST adc_temp_read: RUNNING");
     {
-        unsafe {
-            stm32_metapac::ADC123_COMMON.ccr().modify(|w| {
-                w.set_tsvrefe(true);
-            });
-        }
+        stm32_metapac::ADC123_COMMON.ccr().modify(|w| {
+            w.set_tsvrefe(true);
+        });
         cortex_m::asm::delay(10_000);
 
         let sample = unsafe { adc1_read_channel(18) };
@@ -105,11 +101,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    unsafe {
-        stm32_metapac::ADC123_COMMON.ccr().modify(|w| {
-            w.set_tsvrefe(false);
-        });
-    }
+    stm32_metapac::ADC123_COMMON.ccr().modify(|w| {
+        w.set_tsvrefe(false);
+    });
 
     // Summary
     let passed = PASSED.load(Ordering::Relaxed);

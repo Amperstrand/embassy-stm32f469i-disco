@@ -10,7 +10,6 @@ use embassy_stm32::rcc::{
     AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv, PllRDiv,
     PllSource, Sysclk,
 };
-use embassy_stm32::Config;
 use embassy_stm32f469i_disco::{display::SdramCtrl, DisplayCtrl, FB_HEIGHT, FB_WIDTH};
 use embassy_time::Ticker;
 use embedded_graphics::{

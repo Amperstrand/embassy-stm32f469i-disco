@@ -1,3 +1,4 @@
+#![allow(static_mut_refs)]
 #![no_std]
 #![no_main]
 
@@ -100,9 +101,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("=== DMA Test Suite ===");
 
-    unsafe {
-        stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
-    }
+    stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
 
     // Test 1: 64-byte transfer
     defmt::info!("TEST dma_64b: RUNNING");

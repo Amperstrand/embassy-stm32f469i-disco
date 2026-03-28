@@ -17,11 +17,6 @@ fn pass(name: &str) {
     defmt::info!("TEST {}: PASS", name);
 }
 
-fn fail(name: &str, reason: &str) {
-    FAILED.fetch_add(1, Ordering::Relaxed);
-    defmt::error!("TEST {}: FAIL {}", name, reason);
-}
-
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let p = embassy_stm32::init(Config::default());

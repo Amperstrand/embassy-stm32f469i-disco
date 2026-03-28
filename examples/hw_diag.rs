@@ -4,9 +4,8 @@
 extern crate defmt_rtt;
 extern crate panic_probe;
 
-use core::fmt::Write as _;
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
-use embassy_stm32::peripherals;use embassy_stm32::i2c;
+use embassy_stm32::i2c;
 use embassy_stm32::rcc::*;
 use embassy_stm32::Config;
 use embassy_stm32f469i_disco::{display::SdramCtrl, BoardHint, DisplayCtrl, FB_HEIGHT, FB_WIDTH, TouchCtrl};
@@ -17,8 +16,6 @@ use embedded_graphics::{
     prelude::*,
     primitives::{rectangle::Rectangle, PrimitiveStyle},
 };
-
-use {defmt_rtt as _, panic_probe as _};
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -68,15 +65,6 @@ unsafe fn tfail(name: &'static str) {
 }
 
 unsafe fn tpass_fn(name: &'static str, f: impl FnOnce() -> bool) {
-    defmt::info!("TEST {}: RUNNING", name);
-    if f() {
-        tpass(name);
-    } else {
-        tfail(name);
-    }
-}
-
-unsafe fn tpass_async(name: &'static str, f: impl FnOnce() -> bool) {
     defmt::info!("TEST {}: RUNNING", name);
     if f() {
         tpass(name);
@@ -254,7 +242,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("GPIO Multi-Port Output", || {
-        let mut g = Output::new(unsafe { peri.PG6.clone_unchecked() }, Level::Low, Speed::Low);
+        let mut g = Output::new(peri.PG6.clone_unchecked(), Level::Low, Speed::Low);
         g.set_high();
         g.toggle();
         g.set_low();
@@ -263,7 +251,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // --- LEDs (no delays — just toggle) ---
     unsafe { tpass_fn("LED Green (PG6)", || {
-        let mut led = Output::new(unsafe { peri.PG6.clone_unchecked() }, Level::Low, Speed::Low);
+        let mut led = Output::new(peri.PG6.clone_unchecked(), Level::Low, Speed::Low);
         led.set_high();
         cortex_m::asm::delay(18_000_000);
         led.set_low();
@@ -271,7 +259,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("LED Orange (PD4)", || {
-        let mut led = Output::new(unsafe { peri.PD4.clone_unchecked() }, Level::Low, Speed::Low);
+        let mut led = Output::new(peri.PD4.clone_unchecked(), Level::Low, Speed::Low);
         led.toggle();
         cortex_m::asm::delay(18_000_000);
         led.set_low();
@@ -279,7 +267,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("LED Red (PD5)", || {
-        let mut led = Output::new(unsafe { peri.PD5.clone_unchecked() }, Level::Low, Speed::Low);
+        let mut led = Output::new(peri.PD5.clone_unchecked(), Level::Low, Speed::Low);
         led.toggle();
         cortex_m::asm::delay(18_000_000);
         led.set_low();
@@ -287,7 +275,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("LED Blue (PK3)", || {
-        let mut led = Output::new(unsafe { peri.PK3.clone_unchecked() }, Level::Low, Speed::Low);
+        let mut led = Output::new(peri.PK3.clone_unchecked(), Level::Low, Speed::Low);
         led.toggle();
         cortex_m::asm::delay(18_000_000);
         led.set_low();
@@ -296,10 +284,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("LED All Toggle", || {
         let mut leds = [
-            Output::new(unsafe { peri.PG6.clone_unchecked() }, Level::Low, Speed::Low),
-            Output::new(unsafe { peri.PD4.clone_unchecked() }, Level::Low, Speed::Low),
-            Output::new(unsafe { peri.PD5.clone_unchecked() }, Level::Low, Speed::Low),
-            Output::new(unsafe { peri.PK3.clone_unchecked() }, Level::Low, Speed::Low),
+            Output::new(peri.PG6.clone_unchecked(), Level::Low, Speed::Low),
+            Output::new(peri.PD4.clone_unchecked(), Level::Low, Speed::Low),
+            Output::new(peri.PD5.clone_unchecked(), Level::Low, Speed::Low),
+            Output::new(peri.PK3.clone_unchecked(), Level::Low, Speed::Low),
         ];
         for _ in 0..3 {
             for led in leds.iter_mut() { led.toggle(); }
@@ -344,11 +332,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }
 
     // --- RNG ---
-    unsafe {
-        stm32_metapac::RCC.ahb2enr().modify(|w| w.set_rngen(true));
-    }
+    stm32_metapac::RCC.ahb2enr().modify(|w| w.set_rngen(true));
     unsafe { tpass_fn("RNG Not Zeros", || {
-        let mut rng = stm32_metapac::RNG;
+        let rng = stm32_metapac::RNG;
         loop {
             let sr = rng.sr().read();
             if sr.seis() | sr.ceis() {
@@ -363,7 +349,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("RNG Uniqueness", || {
-        let mut rng = stm32_metapac::RNG;
+        let rng = stm32_metapac::RNG;
         let mut buf = [0u32; 64];
         for slot in buf.iter_mut() {
             *slot = loop {
@@ -393,7 +379,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     unsafe { tpass_fn("RNG Consecutive Differ", || {
-        let mut rng = stm32_metapac::RNG;
+        let rng = stm32_metapac::RNG;
         let v1 = loop {
             let sr = rng.sr().read();
             if sr.drdy() { break rng.dr().read(); }
@@ -416,9 +402,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }) };
 
     // --- ADC ---
-    unsafe {
-        stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
-    }
+    stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
     unsafe { tpass_fn("ADC Temp Sensor", || {
         stm32_metapac::ADC123_COMMON.ccr().modify(|w| { w.set_tsvrefe(true); });
         cortex_m::asm::delay(10_000);
@@ -535,7 +519,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let offset = (r as usize) * (words / 16);
             let pattern = 0xFEED0000 | r;
             let end = core::cmp::min(offset + 1024, words);
-            for (i, word) in ram[offset..end].iter().enumerate() {
+            for (_i, word) in ram[offset..end].iter().enumerate() {
                 if *word != pattern { ok = false; break; }
             }
             if !ok { break; }
@@ -644,14 +628,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("Touch I2C Init", || {
         let _i2c = i2c::I2c::new_blocking(
-            unsafe { peri.I2C1.clone_unchecked() }, unsafe { peri.PB8.clone_unchecked() }, unsafe { peri.PB9.clone_unchecked() }, i2c::Config::default(),
+            peri.I2C1.clone_unchecked(), peri.PB8.clone_unchecked(), peri.PB9.clone_unchecked(), i2c::Config::default(),
         );
         true
     }) };
 
     unsafe { tpass_fn("Touch Chip ID", || {
         let mut i2c = i2c::I2c::new_blocking(
-            unsafe { peri.I2C1.clone_unchecked() }, unsafe { peri.PB8.clone_unchecked() }, unsafe { peri.PB9.clone_unchecked() }, i2c::Config::default(),
+            peri.I2C1.clone_unchecked(), peri.PB8.clone_unchecked(), peri.PB9.clone_unchecked(), i2c::Config::default(),
         );
         let touch = TouchCtrl::new();
         match touch.read_chip_id(&mut i2c) {
@@ -662,7 +646,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("Touch Idle Status", || {
         let mut i2c = i2c::I2c::new_blocking(
-            unsafe { peri.I2C1.clone_unchecked() }, unsafe { peri.PB8.clone_unchecked() }, unsafe { peri.PB9.clone_unchecked() }, i2c::Config::default(),
+            peri.I2C1.clone_unchecked(), peri.PB8.clone_unchecked(), peri.PB9.clone_unchecked(), i2c::Config::default(),
         );
         let touch = TouchCtrl::new();
         touch.td_status(&mut i2c).unwrap_or(0) == 0
@@ -673,7 +657,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("UART Init", || {
         embassy_stm32::usart::Uart::new_blocking(
-            unsafe { peri.USART1.clone_unchecked() }, unsafe { peri.PA10.clone_unchecked() }, unsafe { peri.PA9.clone_unchecked() },
+            peri.USART1.clone_unchecked(), peri.PA10.clone_unchecked(), peri.PA9.clone_unchecked(),
             embassy_stm32::usart::Config::default(),
         )
         .is_ok()
@@ -681,7 +665,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("UART TX Byte", || {
         let mut tx = embassy_stm32::usart::Uart::new_blocking(
-            unsafe { peri.USART1.clone_unchecked() }, unsafe { peri.PA10.clone_unchecked() }, unsafe { peri.PA9.clone_unchecked() },
+            peri.USART1.clone_unchecked(), peri.PA10.clone_unchecked(), peri.PA9.clone_unchecked(),
             embassy_stm32::usart::Config::default(),
         )
         .unwrap();
@@ -691,7 +675,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("UART Multi-Byte", || {
         let mut tx = embassy_stm32::usart::Uart::new_blocking(
-            unsafe { peri.USART1.clone_unchecked() }, unsafe { peri.PA10.clone_unchecked() }, unsafe { peri.PA9.clone_unchecked() },
+            peri.USART1.clone_unchecked(), peri.PA10.clone_unchecked(), peri.PA9.clone_unchecked(),
             embassy_stm32::usart::Config::default(),
         )
         .unwrap();
@@ -701,7 +685,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe { tpass_fn("UART fmt::Write", || {
         let mut tx = embassy_stm32::usart::Uart::new_blocking(
-            unsafe { peri.USART1.clone_unchecked() }, unsafe { peri.PA10.clone_unchecked() }, unsafe { peri.PA9.clone_unchecked() },
+            peri.USART1.clone_unchecked(), peri.PA10.clone_unchecked(), peri.PA9.clone_unchecked(),
             embassy_stm32::usart::Config::default(),
         )
         .unwrap();
@@ -713,7 +697,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     // DMA tests
     draw_header(&mut fb, &mut y, "DMA (DMA2 Stream0 M2M)");
 
-    unsafe { stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true)); }
+    stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
 
     unsafe { tpass_fn("DMA 64B Transfer", || {
         use stm32_metapac::dma::vals;

@@ -18,11 +18,6 @@ fn pass(name: &str) {
     defmt::info!("TEST {}: PASS", name);
 }
 
-fn fail(name: &str, reason: &str) {
-    FAILED.fetch_add(1, Ordering::Relaxed);
-    defmt::error!("TEST {}: FAIL {}", name, reason);
-}
-
 fn test_start(name: &str) {
     TOTAL.fetch_add(1, Ordering::Relaxed);
     defmt::info!("TEST {}: RUNNING", name);

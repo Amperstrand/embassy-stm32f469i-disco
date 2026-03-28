@@ -17,7 +17,7 @@ use embassy_usb::Builder;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 
-use {defmt_rtt as _, panic_probe as _};
+
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -126,7 +126,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     // Test 3: CDC echo (wait for connection + send/receive, 5s timeout)
     defmt::info!("TEST usb_cdc_echo: RUNNING");
     {
-        let usb_fut = usb.run();
+        let _usb_fut = usb.run();
         let echo_fut = run_echo(&mut class, 5);
         let timeout = Timer::after(embassy_time::Duration::from_secs(5));
 
@@ -181,7 +181,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let mut class2 = CdcAcmClass::new(&mut builder2, &mut state2, 64);
         let mut usb2 = builder2.build();
 
-        let usb_fut2 = usb2.run();
+        let _usb_fut2 = usb2.run();
         let poll_fut = run_echo(&mut class2, 100);
         let timeout2 = Timer::after(embassy_time::Duration::from_secs(10));
 
