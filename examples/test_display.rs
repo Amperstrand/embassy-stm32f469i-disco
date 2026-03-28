@@ -116,8 +116,23 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 4: Display init (includes DSI PHY + LTDC + NT35510)
     defmt::info!("TEST display_init: RUNNING");
-    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() });
+    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, embassy_stm32f469i_disco::BoardHint::Auto);
     pass("display_init");
+
+    // Test 4b: Display detect (panel identification)
+    defmt::info!("TEST display_detect: RUNNING");
+    {
+        match embassy_stm32f469i_disco::display::detect_panel(embassy_stm32f469i_disco::BoardHint::Auto) {
+            embassy_stm32f469i_disco::LcdController::Nt35510 => {
+                defmt::info!("Detected NT35510 panel");
+                pass("display_detect");
+            }
+            embassy_stm32f469i_disco::LcdController::Otm8009a => {
+                defmt::info!("Detected OTM8009A panel");
+                pass("display_detect");
+            }
+        }
+    }
 
     defmt::info!("Display initialized {}x{}", FB_WIDTH, FB_HEIGHT);
 

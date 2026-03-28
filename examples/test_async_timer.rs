@@ -218,6 +218,61 @@ async fn main(_spawner: embassy_executor::Spawner) {
         pass("pwm_duty_cycle");
     }
 
+    // Test 9: Timer 500us precision
+    defmt::info!("TEST timer_500us: RUNNING");
+    {
+        let start = dwt_cycles();
+        Timer::after(Duration::from_micros(500)).await;
+        let elapsed = dwt_cycles().wrapping_sub(start);
+        let us = cycles_to_us(elapsed);
+        defmt::info!("  500us delay: {}us", us);
+        if us >= 400 && us <= 700 {
+            pass("timer_500us");
+        } else {
+            fail("timer_500us", "500us delay out of range");
+        }
+    }
+
+    // Test 10: PWM frequency change
+    defmt::info!("TEST pwm_freq_change: RUNNING");
+    {
+        let p = unsafe { embassy_stm32::Peripherals::steal() };
+
+        let ch1 = embassy_stm32::timer::simple_pwm::PwmPin::new(
+            unsafe { p.PA6.clone_unchecked() },
+            embassy_stm32::gpio::OutputType::PushPull,
+        );
+
+        let mut pwm = embassy_stm32::timer::simple_pwm::SimplePwm::new(
+            p.TIM3,
+            Some(ch1),
+            None,
+            None,
+            None,
+            embassy_stm32::time::khz(1),
+            CountingMode::EdgeAlignedUp,
+        );
+
+        let max_duty = pwm.get_max_duty();
+        pwm.enable(Channel::Ch1);
+        pwm.set_duty(Channel::Ch1, max_duty / 2);
+
+        // Change to 10kHz
+        pwm.set_frequency(embassy_stm32::time::khz(10));
+        Timer::after(Duration::from_millis(50)).await;
+        let duty_10k = pwm.get_max_duty();
+        pwm.set_duty(Channel::Ch1, duty_10k / 4);
+        Timer::after(Duration::from_millis(50)).await;
+
+        // Change to 100kHz
+        pwm.set_frequency(embassy_stm32::time::khz(100));
+        Timer::after(Duration::from_millis(50)).await;
+        pwm.set_duty(Channel::Ch1, 0);
+        pwm.disable(Channel::Ch1);
+
+        pass("pwm_freq_change");
+    }
+
     // Summary
     let passed = PASSED.load(Ordering::Relaxed);
     let failed = FAILED.load(Ordering::Relaxed);

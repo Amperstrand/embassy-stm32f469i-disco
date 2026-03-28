@@ -6,6 +6,8 @@ use embedded_graphics::{
 };
 use embedded_hal::delay::DelayNs;
 use nt35510::Nt35510;
+#[cfg(feature = "display")]
+use otm8009a::Otm8009A;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
 use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
 
@@ -576,6 +578,66 @@ impl DsiHostCtrlIo for RawDsi {
     }
 }
 
+// ── Display panel detection ──────────────────────────────────────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LcdController {
+    Nt35510,
+    Otm8009a,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BoardHint {
+    Auto,
+    ForceNt35510,
+    ForceOtm8009a,
+}
+
+const PROBE_RETRIES: u32 = 3;
+
+pub fn detect_panel(hint: BoardHint) -> LcdController {
+    if hint == BoardHint::ForceNt35510 {
+        return LcdController::Nt35510;
+    }
+    if hint == BoardHint::ForceOtm8009a {
+        return LcdController::Otm8009a;
+    }
+
+    let mut panel = Nt35510::new();
+    let mut dsi_adapter = RawDsi;
+    let mut delay = embassy_time::Delay;
+    let mut mismatch_count = 0u32;
+    let mut first_mismatch_id: u8 = 0;
+
+    for _ in 0..PROBE_RETRIES {
+        match panel.probe(&mut dsi_adapter, &mut delay) {
+            Ok(()) => return LcdController::Nt35510,
+            Err(nt35510::Error::ProbeMismatch(id)) => {
+                if mismatch_count == 0 {
+                    first_mismatch_id = id;
+                }
+                mismatch_count += 1;
+            }
+            Err(_) => {}
+        }
+        embassy_time::Delay.delay_ms(5);
+    }
+
+    if mismatch_count >= 2 && first_mismatch_id != 0 {
+        cortex_m::asm::nop();
+        #[cfg(feature = "display")]
+        {
+            let mut otm = Otm8009A::new();
+            if otm.id_matches(&mut dsi_adapter).unwrap_or(false) {
+                return LcdController::Otm8009a;
+            }
+        }
+    }
+
+    cortex_m::asm::nop();
+    LcdController::Nt35510
+}
+
 // ── Display init (orchestrator) ────────────────────────────────────────
 
 pub struct DisplayCtrl {
@@ -586,7 +648,10 @@ impl DisplayCtrl {
     pub fn new(
         sdram: &SdramCtrl,
         lcd_reset: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
     ) -> Self {
+        let _controller = detect_panel(hint);
+
         // LCD reset
         let mut reset_pin = embassy_stm32::gpio::Output::new(
             lcd_reset,

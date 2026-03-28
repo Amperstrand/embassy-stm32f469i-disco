@@ -405,6 +405,7 @@ dependencies = [
  "embedded-hal 1.0.0",
  "embedded-io",
  "nt35510",
+ "otm8009a",
  "panic-probe",
  "stm32-fmc",
  "stm32-metapac",
@@ -814,6 +815,16 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "otm8009a"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e56059a2e83de4409e5fa0854d3ae891b0f949af86c74ccf76a8bffe4ce6dc6d"
+dependencies = [
+ "embedded-display-controller",
+ "embedded-hal 0.2.7",
+]
 
 [[package]]
 name = "panic-probe"

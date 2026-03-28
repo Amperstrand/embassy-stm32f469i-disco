@@ -86,7 +86,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
     defmt::info!("SDRAM test: {}", sdram.test_quick());
 
-    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() });
+    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, embassy_stm32f469i_disco::BoardHint::Auto);
     defmt::info!("Display init done, {}x{}", FB_WIDTH, FB_HEIGHT);
 
     let mut fb = display.fb();

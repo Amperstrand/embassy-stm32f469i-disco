@@ -7,7 +7,7 @@ pub mod display;
 pub mod touch;
 
 #[cfg(feature = "display")]
-pub use display::{DisplayCtrl, FramebufferView, FB_HEIGHT, FB_WIDTH};
+pub use display::{BoardHint, DisplayCtrl, FramebufferView, LcdController, FB_HEIGHT, FB_WIDTH};
 
 #[cfg(feature = "touch")]
 pub use touch::{TouchCtrl, TouchPoint};
