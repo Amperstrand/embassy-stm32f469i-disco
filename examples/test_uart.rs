@@ -5,10 +5,27 @@ extern crate defmt_rtt;
 extern crate panic_probe;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
+use core::fmt::Write as FmtWrite;
 use embedded_hal_02::blocking::serial::Write;
 
 use embassy_stm32::Config;
 use embassy_time::Timer;
+
+struct UartFmtWriter<'a, T>(&'a mut T);
+
+impl<T> FmtWrite for UartFmtWriter<'_, T>
+where
+    T: embedded_hal_02::blocking::serial::Write<u8>,
+{
+    fn write_str(&mut self, s: &str) -> Result<(), core::fmt::Error> {
+        for &byte in s.as_bytes() {
+            if self.0.bwrite_all(&[byte]).is_err() {
+                return Err(core::fmt::Error);
+            }
+        }
+        Ok(())
+    }
+}
 
 static PASSED: AtomicUsize = AtomicUsize::new(0);
 static FAILED: AtomicUsize = AtomicUsize::new(0);
@@ -67,11 +84,17 @@ async fn main(_spawner: embassy_executor::Spawner) {
         fail("usart1_multi_byte", "write failed");
     }
 
-    // Formatted write via core::fmt::Write (blocking flush after)
+    // Formatted write via core::fmt::Write
     defmt::info!("TEST usart1_fmt_write: RUNNING");
-    let _ = tx.bwrite_all(b"uart ok\r\n");
-    Timer::after(embassy_time::Duration::from_millis(5)).await;
-    pass("usart1_fmt_write");
+    {
+        let mut writer = UartFmtWriter(&mut tx);
+        let result = write!(writer, "uart ok {} {}\r\n", 42u32, true);
+        Timer::after(embassy_time::Duration::from_millis(5)).await;
+        match result {
+            Ok(_) => pass("usart1_fmt_write"),
+            Err(_) => fail("usart1_fmt_write", "fmt error"),
+        }
+    }
 
     // Summary
     let passed = PASSED.load(Ordering::Relaxed);

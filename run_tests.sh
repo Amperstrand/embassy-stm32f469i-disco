@@ -234,7 +234,7 @@ run_all() {
         exit 2
     fi
 
-    local tests=("test_led" "test_sdram" "test_gpio" "test_display" "test_uart" "test_dma" "test_async_timer" "test_usb")
+    local tests=("test_led" "test_sdram" "test_gpio" "test_display" "test_uart" "test_dma" "test_rng" "test_adc" "test_async_timer" "test_usb")
 
     for test in "${tests[@]}"; do
         local timeout=$TIMEOUT_DEFAULT
@@ -245,6 +245,8 @@ run_all() {
             test_led) timeout=30 ;;
             test_uart) timeout=30 ;;
             test_dma) timeout=30 ;;
+            test_rng) timeout=30 ;;
+            test_adc) timeout=30 ;;
             test_async_timer) timeout=30 ;;
             test_usb) timeout=120 ;;
         esac
@@ -324,7 +326,9 @@ if [[ "$TARGET" == "--help" || "$TARGET" == "-h" ]]; then
     echo "  test_dma           - DMA2 M2M transfers (4 tests)"
     echo "  test_async_timer   - Embassy Timer, Ticker, Signal, DWT, PWM (8 tests)"
     echo "  test_usb           - USB GPIO pin tests (3 tests)"
-    echo "  all                - Run fast tests: led, sdram, gpio, display, uart, dma, async_timer, usb (default)"
+    echo "  test_rng           - Hardware RNG (3 tests)"
+    echo "  test_adc           - ADC internal temp + VREFINT (2 tests)"
+    echo "  all                - Run fast tests: led, sdram, gpio, display, uart, dma, rng, adc, async_timer, usb (default)"
     echo ""
     echo "Options:"
     echo "  --no-flash  Skip flashing (re-run already-flashed firmware)"
@@ -345,7 +349,7 @@ else
     } > "$REPORT_FILE"
 
     case "$TARGET" in
-        test_led|test_sdram|test_display|test_gpio|test_touch|test_async_timer|test_usb|test_sdram_full|test_uart|test_dma)
+        test_led|test_sdram|test_display|test_gpio|test_touch|test_async_timer|test_usb|test_sdram_full|test_uart|test_dma|test_rng|test_adc)
             timeout=$TIMEOUT_DEFAULT
             [[ "$TARGET" == "test_sdram" ]] && timeout=60
             [[ "$TARGET" == "test_sdram_full" ]] && timeout=600
@@ -357,11 +361,13 @@ else
             [[ "$TARGET" == "test_usb" ]] && timeout=120
             [[ "$TARGET" == "test_uart" ]] && timeout=30
             [[ "$TARGET" == "test_dma" ]] && timeout=30
+            [[ "$TARGET" == "test_rng" ]] && timeout=30
+            [[ "$TARGET" == "test_adc" ]] && timeout=30
             flash_and_run "$TARGET" "$timeout"
             ;;
         *)
             echo -e "${RED}Unknown test: ${TARGET}${NC}"
-            echo "Available: test_led, test_sdram, test_sdram_full, test_display, test_gpio, test_touch, test_uart, test_dma, test_async_timer, test_usb, all"
+            echo "Available: test_led, test_sdram, test_sdram_full, test_display, test_gpio, test_touch, test_uart, test_dma, test_rng, test_adc, test_async_timer, test_usb, all"
             exit 1
             ;;
     esac

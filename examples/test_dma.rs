@@ -28,6 +28,8 @@ static mut SRC2: [u8; 4096] = [0; 4096];
 static mut DST2: [u8; 4096] = [0; 4096];
 static mut SRC3: [u8; 256] = [0; 256];
 static mut DST3: [u8; 256] = [0; 256];
+static mut SRC4: [u8; 1024] = [0; 1024];
+static mut DST4: [u8; 1024] = [0; 1024];
 
 unsafe fn fill_u8(buf: *mut u8, len: usize, pattern: u8) {
     for i in 0..len {
@@ -128,7 +130,20 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 3: Repeated transfers (10 rounds)
+    // Test 3: 1024-byte transfer
+    defmt::info!("TEST dma_1024b: RUNNING");
+    unsafe {
+        fill_u8(SRC4.as_mut_ptr(), 1024, 0xFF);
+        fill_u8(DST4.as_mut_ptr(), 1024, 0);
+        dma2_stream0_m2m(DST4.as_mut_ptr(), SRC4.as_ptr(), 1024);
+        if verify_u8(SRC4.as_ptr(), DST4.as_ptr(), 1024) {
+            pass("dma_1024b");
+        } else {
+            fail("dma_1024b", "data mismatch");
+        }
+    }
+
+    // Test 4: Repeated transfers (10 rounds)
     defmt::info!("TEST dma_repeated: RUNNING");
     {
         let mut ok = true;
@@ -151,7 +166,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 4: DMA timing check
+    // Test 5: DMA timing check
     defmt::info!("TEST dma_timing: RUNNING");
     unsafe {
         cortex_m::peripheral::Peripherals::steal()
