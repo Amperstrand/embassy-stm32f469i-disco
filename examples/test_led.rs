@@ -11,7 +11,6 @@ use embassy_time::Timer;
 
 static PASSED: AtomicUsize = AtomicUsize::new(0);
 static FAILED: AtomicUsize = AtomicUsize::new(0);
-static TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 fn pass(name: &str) {
     PASSED.fetch_add(1, Ordering::Relaxed);
@@ -19,7 +18,6 @@ fn pass(name: &str) {
 }
 
 fn test_start(name: &str) {
-    TOTAL.fetch_add(1, Ordering::Relaxed);
     defmt::info!("TEST {}: RUNNING", name);
 }
 

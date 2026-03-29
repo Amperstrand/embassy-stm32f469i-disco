@@ -132,6 +132,7 @@ impl SdramCtrl {
         unsafe { &mut *core::ptr::slice_from_raw_parts_mut(start as *mut T, len) }
     }
 
+    #[must_use]
     pub fn test_quick(&self) -> bool {
         let words = unsafe { core::slice::from_raw_parts_mut(self.mem as *mut u32, 1024) };
         for word in words.iter_mut() {
@@ -181,7 +182,6 @@ unsafe fn reg32_modify(base: usize, offset: usize, f: impl FnOnce(u32) -> u32) {
 
 // ── DSI PHY init ──────────────────────────────────────────────────────
 
-#[allow(dead_code)]
 unsafe fn dsi_init() {
     // DSIHOST register offsets from stm32-metapac-21.0.0 Dsihost v1
     const CR: usize = 0x04;
@@ -191,7 +191,9 @@ unsafe fn dsi_init() {
     const LPCR: usize = 0x14;
     const LPMCR: usize = 0x18;
     const PCR: usize = 0x2C;
+    #[allow(dead_code)]
     const GVCIDR: usize = 0x30;
+    #[allow(dead_code)]
     const MCR: usize = 0x34;
     const VMCR: usize = 0x38;
     const VPCR: usize = 0x3C;
@@ -204,10 +206,15 @@ unsafe fn dsi_init() {
     const VVBPCR: usize = 0x58;
     const VVFPCR: usize = 0x5C;
     const VVACR: usize = 0x60;
+    #[allow(dead_code)]
     const LCCR: usize = 0x64;
+    #[allow(dead_code)]
     const CMCR: usize = 0x68;
+    #[allow(dead_code)]
     const GHCR: usize = 0x6C;
+    #[allow(dead_code)]
     const GPDR: usize = 0x70;
+    #[allow(dead_code)]
     const GPSR: usize = 0x74;
     const CLCR: usize = 0x94;
     const CLTCR: usize = 0x98;
@@ -347,7 +354,7 @@ unsafe fn dsi_init() {
     reg32_write(DSI_BASE, CLTCR, (35 << 0) | (35 << 16)); // HS2LP_TIME, LP2HS_TIME
                                                           // DLTCR: [26:16]=MRD_TIME, [15:8]=LP2HS_TIME, [7:0]=HS2LP_TIME
     reg32_write(DSI_BASE, DLTCR, (35 << 0) | (35 << 8) | (0 << 16)); // HS2LP=35, LP2HS=35, MRD=0
-    reg32_modify(DSI_BASE, PCONFR, |w| (w & !0x1F << 16) | (10 << 16)); // SW_TIME=10
+    reg32_modify(DSI_BASE, PCONFR, |w| (w & !(0x1F << 16)) | (10 << 16)); // SW_TIME=10
 
     cortex_m::asm::delay(168_000 * 10);
 
@@ -359,7 +366,6 @@ unsafe fn dsi_init() {
 
 // ── LTDC init ─────────────────────────────────────────────────────────
 
-#[allow(dead_code)]
 unsafe fn ltdc_init(fb_addr: u32) {
     const GCR: usize = 0x18;
     const SSCR: usize = 0x08;
