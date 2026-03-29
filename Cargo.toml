@@ -40,3 +40,5 @@ cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 embedded-hal-02 = { package = "embedded-hal", version = "0.2.7" }
 embedded-io = "0.7"
+panic-halt = "1.0"
+heapless = "0.8"

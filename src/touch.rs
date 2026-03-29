@@ -20,7 +20,6 @@ impl TouchCtrl {
         }
     }
 
-    #[must_use]
     pub fn td_status(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
@@ -31,7 +30,6 @@ impl TouchCtrl {
         Ok(buf[0] & 0x0F)
     }
 
-    #[must_use]
     pub fn get_touch(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
@@ -45,7 +43,6 @@ impl TouchCtrl {
         Ok(TouchPoint { x, y })
     }
 
-    #[must_use]
     pub fn read_chip_id(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
