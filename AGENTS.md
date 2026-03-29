@@ -73,7 +73,7 @@ run_usb_tests.sh             — st-flash based runner (USB CDC stress test)
 - MCU: STM32F469NIH6 (ARM Cortex-M4F, 180MHz)
 - Display: 480x800 RGB565 LCD via DSI/LTDC (NT35510 controller)
 - SDRAM: 16MB via FMC (IS42S32400F-6BL)
-- Touch: FT6X06 capacitive touch via I2C1 (PB8=SDA, PB9=SCL)
+- Touch: FT6X06 capacitive touch via I2C1 (PB8=SCL, PB9=SDA)
 - USB: OTG FS (PA11=DM, PA12=DP) — CDC-ACM
 
 ## Key Dependencies
@@ -155,13 +155,47 @@ Testing performed by the **micronuts** firmware (Amperstrand/micronuts), which d
 | **RNG** | PASS | 166 unique values in 256 bytes | SHA-256 conditioned before use |
 | **Heap** | PASS | 1024 byte alloc + pattern verified | 128KB heap in SDRAM at offset 768KB |
 
+### Test Date: 2026-03-29
+
+BSP's own test suite run independently on hardware via probe-rs.
+
+| Test Example | Result | Tests | Notes |
+|-------------|--------|-------|-------|
+| **test_led** | PASS | 16/16 | All 4 LEDs, patterns, toggle stress |
+| **test_gpio** | PASS | 5/5 | PA0 input, stability, multi-port, async toggle |
+| **test_async_timer** | PASS | 10/10 | Timer, Ticker, select, Signal, PWM, DWT. Runs at 16MHz HSI (Config::default) |
+| **test_rng** | PASS | 3/3 | Requires 84MHz PLL (48MHz on PLL1_Q). 64/64 unique values |
+| **test_adc** | PASS | 2/2 | Temp sensor (936 raw), VREFINT (1501 raw). Fixed SMPR2 register index |
+| **test_uart** | PASS | 4/4 | USART1 init, TX byte, multi-byte, fmt::Write adapter |
+| **test_dma** | PASS | 5/5 | DMA2 M2M: 64B, 4096B, 1024B, repeated, timing (147us for 64B) |
+| **test_sdram** | PASS | 14/14 | Full 16MB SDRAM: checkerboard, march-C, boundary, byte/halfword |
+| **test_sdram_full** | PASS | 13/13 | Exhaustive 16MB: walking bits, random xorshift, solid fills, multi-pass |
+| **test_display** | PASS | 14/14 | SDRAM init, DSI/LTDC, NT35510 detect, color fills, gradient, text, rapid refresh |
+| **test_touch** | PASS | 5/5 | Requires SDRAM+display init (FT6X06 powered from display module). Vendor ID=0x11 at reg 0xA8 |
+| **hw_diag** | 33/38 | Phase 1: 12/15, Phase 2: 21/23 | RNG x3 FAIL (no 48MHz clock at 180MHz PLL). All other subsystems pass |
+| **test_usb_cdc** | PASS | 4/4 | Requires 84MHz PLL. Pin order: PA12(DP), PA11(DM) |
+| **USB CDC stress** | 591/600 | 98.5% | Phase 3 first packet timeout, Phase 4 stale buffer (test firmware issue, not USB stack) |
+
+### Bugs Found and Fixed During Hardware Testing
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| `test_async_timer` timing failures (5/10) | `cycles_to_us()` divided by 180 but `Config::default()` runs at 16MHz HSI | Changed divisor to 16 |
+| `test_adc` HardFault | `Smpr2::set_smp(channel)` — channel 17/18 out of 0-9 range (SMPR2 covers channels 10-18, 0-indexed) | Use `channel - 10` as index |
+| `test_rng` hang | RNG requires 48MHz clock; `Config::default()` (16MHz HSI) provides none | Added 84MHz PLL config, init timeout |
+| `test_touch` I2C failures (3/5) | FT6X06 is powered from display module; no SDRAM/display init = no power to touch | Init SDRAM+display before I2C |
+| `hw_diag` RNG hang | Same 48MHz clock issue as test_rng at 180MHz PLL | Added timeout counters to RNG busy-wait loops |
+| `hw_diag` ADC crash | Same SMPR2 register index bug as test_adc | Fixed SMPR2 indices |
+| `run_usb_tests.sh` arg parsing | `for arg in "$@"` + `shift` doesn't work in bash | Changed to `while [ $# -gt 0 ]` loop |
+| FT6X06 chip ID mismatch | BSP `read_chip_id()` reads reg 0xA8 (vendor ID=0x11), not reg 0xA3 (chip model). Test expected wrong values 0xCC/0xA3 | Fixed expected value to 0x11. See #9 |
+
 ### What's NOT Tested (on this BSP directly)
 
 | Subsystem | Status | Notes |
 |-----------|--------|-------|
 | **DSI reads** | FAIL | `DisplayCtrl::probe()` fails consistently (BTA/PHY timing). Workaround: `BoardHint::ForceNt35510` skips probe. Writes work fine, display renders correctly. Not needed for normal operation. |
+| **RNG at 180MHz PLL** | FAIL | 180MHz config has no 48MHz clock source (PLL1_Q=51.4MHz, PLLSAI_R=54.9MHz). RNG only works with 84MHz PLL config |
 | **SDIO** | NOT TESTED | No microSD card testing. Out of scope for Cashu wallet use case. |
-| **Test suite** | NOT RUN | All 15 test examples + hw_diag build clean (zero warnings, zero clippy errors) but have not been flashed and run on hardware. Verified indirectly through micronuts firmware. |
 
 ## Known Issues
 
@@ -224,7 +258,7 @@ We concluded the claimed EPENA hang may be timing-dependent or caused by probe-r
 | FMC/SDRAM | PD0,1,8,9,10,14,15, PE0,1,7,8,9,10,11,12,13,14,15, PF0,1,2,3,4,5,11,12,13,14,15, PG0,1,2,3,4,5, PH5,6,7,8,9,10,11,12,13,14,15, PI0,1,2,3,4,5,6,7 | Full 16MB SDRAM bus |
 | DSI | PA0,1,2,3,4,5,6,7, PH8,9,10,11,12, PI9,10,11,12 | 2-lane DSI |
 | LTDC | PC0,1,2,3,6,7,8,9,10, PA8,9,10, PH0,1,2,3,4, PI10,11,12 | LCD timing and data |
-| I2C1 (touch) | PB8 (SDA), PB9 (SCL) | FT6X06 touch controller |
+| I2C1 (touch) | PB8 (SCL), PB9 (SDA) | FT6X06 touch controller |
 | LCD reset | PH7 | NT35510 panel reset |
 | USART1 (test) | PA9 (TX), PA10 (RX) | Test UART |
 | USART6 (scanner) | PG14 (TX), PG9 (RX) | NOT consumed by SDRAM — available for QR scanner |

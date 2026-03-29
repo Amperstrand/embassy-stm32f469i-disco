@@ -406,6 +406,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     unsafe {
         tpass_fn("RNG Not Zeros", || {
             let rng = stm32_metapac::RNG;
+            let mut timeout = 1_000_000u32;
             loop {
                 let sr = rng.sr().read();
                 if sr.seis() | sr.ceis() {
@@ -421,6 +422,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
                         return true;
                     }
                 }
+                timeout -= 1;
+                if timeout == 0 {
+                    return false;
+                }
             }
         })
     };
@@ -430,6 +435,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let rng = stm32_metapac::RNG;
             let mut buf = [0u32; 64];
             for slot in buf.iter_mut() {
+                let mut timeout = 1_000_000u32;
                 *slot = loop {
                     let sr = rng.sr().read();
                     if sr.seis() | sr.ceis() {
@@ -443,6 +449,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
                     }
                     if sr.drdy() {
                         break rng.dr().read();
+                    }
+                    timeout -= 1;
+                    if timeout == 0 {
+                        return false;
                     }
                 };
             }
@@ -470,6 +480,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     unsafe {
         tpass_fn("RNG Consecutive Differ", || {
             let rng = stm32_metapac::RNG;
+            let mut timeout = 1_000_000u32;
             let v1 = loop {
                 let sr = rng.sr().read();
                 if sr.drdy() {
@@ -483,7 +494,12 @@ async fn main(_spawner: embassy_executor::Spawner) {
                     });
                     rng.cr().modify(|w| w.set_rngen(true));
                 }
+                timeout -= 1;
+                if timeout == 0 {
+                    return false;
+                }
             };
+            timeout = 1_000_000u32;
             let v2 = loop {
                 let sr = rng.sr().read();
                 if sr.drdy() {
@@ -496,6 +512,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
                         w.set_ceis(false);
                     });
                     rng.cr().modify(|w| w.set_rngen(true));
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    return false;
                 }
             };
             v1 != v2
@@ -527,7 +547,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 w.set_sq(0, 18);
             });
             adc.smpr2().write(|w| {
-                w.set_smp(18, stm32_metapac::adc::vals::SampleTime::CYCLES480);
+                w.set_smp(8, stm32_metapac::adc::vals::SampleTime::CYCLES480);
             });
             adc.cr2().modify(|w| w.set_adon(true));
             cortex_m::asm::delay(3);
@@ -546,7 +566,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 w.set_sq(0, 17);
             });
             adc.smpr2().write(|w| {
-                w.set_smp(17, stm32_metapac::adc::vals::SampleTime::CYCLES480);
+                w.set_smp(7, stm32_metapac::adc::vals::SampleTime::CYCLES480);
             });
             adc.cr2().modify(|w| w.set_swstart(true));
             while !adc.sr().read().eoc() {}
@@ -818,7 +838,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             );
             let touch = TouchCtrl::new();
             match touch.read_chip_id(&mut i2c) {
-                Ok(id) => id == 0xCC || id == 0xA3,
+                Ok(id) => id == 0x11,
                 Err(_) => false,
             }
         })

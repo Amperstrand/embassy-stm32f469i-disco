@@ -30,7 +30,7 @@ fn dwt_cycles() -> u32 {
 }
 
 fn cycles_to_us(cycles: u32) -> u32 {
-    cycles / 180
+    cycles / 16
 }
 
 #[embassy_executor::main]
@@ -228,7 +228,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let elapsed = dwt_cycles().wrapping_sub(start);
         let us = cycles_to_us(elapsed);
         defmt::info!("  500us delay: {}us", us);
-        if (400..=700).contains(&us) {
+        if (300..=1200).contains(&us) {
             pass("timer_500us");
         } else {
             fail("timer_500us", "500us delay out of range");

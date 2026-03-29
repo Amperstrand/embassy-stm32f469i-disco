@@ -46,12 +46,21 @@ unsafe fn adc1_read_channel(channel: u8) -> u16 {
         w.set_sq(0, channel);
     });
 
-    adc.smpr2().write(|w| {
-        w.set_smp(
-            channel as usize,
-            stm32_metapac::adc::vals::SampleTime::CYCLES480,
-        );
-    });
+    if channel >= 10 {
+        adc.smpr2().write(|w| {
+            w.set_smp(
+                (channel - 10) as usize,
+                stm32_metapac::adc::vals::SampleTime::CYCLES480,
+            );
+        });
+    } else {
+        adc.smpr1().write(|w| {
+            w.set_smp(
+                channel as usize,
+                stm32_metapac::adc::vals::SampleTime::CYCLES480,
+            );
+        });
+    }
 
     adc.cr2().modify(|w| w.set_adon(true));
     cortex_m::asm::delay(3);

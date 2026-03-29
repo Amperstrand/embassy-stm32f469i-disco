@@ -38,14 +38,15 @@ COUNT=$DEFAULT_COUNT
 PORT=""
 EXTRA_PYTHON_ARGS=""
 
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+    arg="$1"
     case "$arg" in
-        --build-only) BUILD_ONLY=true ;;
-        --flash-only) FLASH_ONLY=true ;;
-        --test-only) TEST_ONLY=true ;;
-        --count) shift; COUNT="${1:-$DEFAULT_COUNT}" ;;
-        --port) shift; PORT="${1:-}" ;;
-        --find) EXTRA_PYTHON_ARGS="--find" ;;
+        --build-only) BUILD_ONLY=true; shift ;;
+        --flash-only) FLASH_ONLY=true; shift ;;
+        --test-only) TEST_ONLY=true; shift ;;
+        --count) shift; COUNT="${1:-$DEFAULT_COUNT}"; shift ;;
+        --port) shift; PORT="${1:-}"; shift ;;
+        --find) EXTRA_PYTHON_ARGS="--find"; shift ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo ""

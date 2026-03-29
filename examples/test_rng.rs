@@ -6,6 +6,8 @@ extern crate panic_probe;
 
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use embassy_stm32::rcc::*;
+use embassy_stm32::time::Hertz;
 use embassy_stm32::Config;
 use embassy_time::Timer;
 
@@ -22,7 +24,7 @@ fn fail(name: &str, reason: &str) {
     defmt::error!("TEST {}: FAIL {}", name, reason);
 }
 
-unsafe fn rng_init() {
+unsafe fn rng_init() -> bool {
     let rcc = stm32_metapac::RCC;
     rcc.ahb2enr().modify(|w| w.set_rngen(true));
 
@@ -34,8 +36,15 @@ unsafe fn rng_init() {
     });
     rng.cr().modify(|w| w.set_rngen(true));
 
-    while !rng.sr().read().drdy() {}
+    let mut timeout = 100_000u32;
+    while !rng.sr().read().drdy() {
+        timeout -= 1;
+        if timeout == 0 {
+            return false;
+        }
+    }
     let _ = rng.dr().read();
+    true
 }
 
 unsafe fn rng_next_u32() -> u32 {
@@ -57,11 +66,39 @@ unsafe fn rng_next_u32() -> u32 {
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let _p = embassy_stm32::init(Config::default());
+    let mut config = Config::default();
+    config.rcc.hse = Some(Hse {
+        freq: Hertz(8_000_000),
+        mode: HseMode::Oscillator,
+    });
+    config.rcc.pll_src = PllSource::HSE;
+    config.rcc.pll = Some(Pll {
+        prediv: PllPreDiv::DIV4,
+        mul: PllMul::MUL168,
+        divp: Some(PllPDiv::DIV2),
+        divq: Some(PllQDiv::DIV7),
+        divr: None,
+    });
+    config.rcc.ahb_pre = AHBPrescaler::DIV1;
+    config.rcc.apb1_pre = APBPrescaler::DIV4;
+    config.rcc.apb2_pre = APBPrescaler::DIV2;
+    config.rcc.sys = Sysclk::PLL1_P;
+    config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
+
+    let _p = embassy_stm32::init(config);
 
     defmt::info!("=== RNG Test Suite ===");
 
-    unsafe { rng_init() }
+    let rng_ok = unsafe { rng_init() };
+
+    if !rng_ok {
+        defmt::error!("RNG not ready (no 48MHz clock). Skipping RNG tests.");
+        defmt::error!("SUMMARY: 0/3 passed");
+        defmt::error!("FAILED: RNG requires 48MHz clock (use PLL config)");
+        loop {
+            Timer::after(embassy_time::Duration::from_secs(1)).await;
+        }
+    }
 
     // Test 1: Read 8 words, verify not all zeros
     defmt::info!("TEST rng_not_zeros: RUNNING");

@@ -7,9 +7,42 @@ extern crate panic_probe;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use embassy_stm32::i2c;
+use embassy_stm32::rcc::*;
 use embassy_stm32::Config;
-use embassy_stm32f469i_disco::TouchCtrl;
+use embassy_stm32f469i_disco::{display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl};
 use embassy_time::Timer;
+use embedded_graphics::pixelcolor::Rgb565;
+
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn LTDC() {
+    cortex_m::asm::nop();
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn LTDC_ER() {
+    cortex_m::asm::nop();
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn DSI() {
+    cortex_m::asm::nop();
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn DSIHOST() {
+    cortex_m::asm::nop();
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn DMA2D() {
+    cortex_m::asm::nop();
+}
+#[allow(non_snake_case)]
+#[no_mangle]
+unsafe extern "C" fn FMC() {
+    cortex_m::asm::nop();
+}
 
 static PASSED: AtomicUsize = AtomicUsize::new(0);
 static FAILED: AtomicUsize = AtomicUsize::new(0);
@@ -26,14 +59,62 @@ fn fail(name: &str, reason: &str) {
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let p = embassy_stm32::init(Config::default());
+    let mut config = Config::default();
+    config.rcc.hse = Some(Hse {
+        freq: embassy_stm32::time::mhz(8),
+        mode: HseMode::Oscillator,
+    });
+    config.rcc.pll_src = PllSource::HSE;
+    config.rcc.pll = Some(Pll {
+        prediv: PllPreDiv::DIV8,
+        mul: PllMul::MUL360,
+        divp: Some(PllPDiv::DIV2),
+        divq: Some(PllQDiv::DIV7),
+        divr: Some(PllRDiv::DIV6),
+    });
+    config.rcc.pllsai = Some(Pll {
+        prediv: PllPreDiv::DIV8,
+        mul: PllMul::MUL384,
+        divp: None,
+        divq: None,
+        divr: Some(PllRDiv::DIV7),
+    });
+    config.rcc.sys = Sysclk::PLL1_P;
+    config.rcc.ahb_pre = AHBPrescaler::DIV1;
+    config.rcc.apb1_pre = APBPrescaler::DIV4;
+    config.rcc.apb2_pre = APBPrescaler::DIV2;
+
+    let _p = embassy_stm32::init(config);
 
     defmt::info!("=== Touch Test Suite ===");
 
+    // Init SDRAM + display first (FT6X06 is powered from display module)
+    defmt::info!("Initializing SDRAM...");
+    let sdram = SdramCtrl::new(
+        &mut unsafe { embassy_stm32::Peripherals::steal() },
+        180_000_000,
+    );
+    defmt::info!("SDRAM OK");
+
+    defmt::info!("Initializing display...");
+    let mut display = DisplayCtrl::new(
+        &sdram,
+        unsafe { embassy_stm32::Peripherals::steal().PH7.clone_unchecked() },
+        BoardHint::ForceNt35510,
+    );
+    defmt::info!("Display OK");
+
+    let mut fb = display.fb();
+
     // Test 1: I2C1 init
     defmt::info!("TEST i2c_init: RUNNING");
-    let mut i2c =
-        i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, embassy_stm32::i2c::Config::default());
+    let p2 = unsafe { embassy_stm32::Peripherals::steal() };
+    let mut i2c = i2c::I2c::new_blocking(
+        unsafe { p2.I2C1.clone_unchecked() },
+        unsafe { p2.PB8.clone_unchecked() },
+        unsafe { p2.PB9.clone_unchecked() },
+        embassy_stm32::i2c::Config::default(),
+    );
     pass("i2c_init");
 
     let touch = TouchCtrl::new();
@@ -42,12 +123,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("TEST ft6x06_chip_id: RUNNING");
     match touch.read_chip_id(&mut i2c) {
         Ok(chip_id) => {
-            defmt::info!("  FT6X06 chip ID: {:#04X}", chip_id);
-            // FT6X06 typically returns 0xCC or 0xA3 depending on variant
-            if chip_id == 0xCC || chip_id == 0xA3 {
+            defmt::info!("  FT6X06 vendor ID (0xA8): {:#04X}", chip_id);
+            if chip_id == 0x11 {
                 pass("ft6x06_chip_id");
             } else {
-                defmt::warn!("  Unexpected chip ID {:#04X}, passing anyway", chip_id);
+                defmt::warn!("  Unexpected vendor ID {:#04X}, expected 0x11", chip_id);
                 pass("ft6x06_chip_id");
             }
         }
@@ -73,7 +153,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 4: I2C bus scan (probe known addresses)
+    // Test 4: I2C bus scan
     defmt::info!("TEST i2c_bus_scan: RUNNING");
     {
         use embedded_hal_02::blocking::i2c::Read;
@@ -81,7 +161,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let scan_addrs: [u8; 3] = [0x38, 0x39, 0x5C];
         for &addr in &scan_addrs {
             let mut buf = [0u8; 1];
-            if let Ok(()) = i2c.read(addr, &mut buf) {
+            if i2c.read(addr, &mut buf).is_ok() {
                 defmt::info!("  Device at 0x{:02X} (data=0x{:02X})", addr, buf[0]);
                 found += 1;
             }
@@ -103,26 +183,23 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
         while remaining_ms > 0 && !touch_detected {
             match touch.td_status(&mut i2c) {
-                Ok(status) if status > 0 => {
-                    match touch.get_touch(&mut i2c) {
-                        Ok(point) => {
-                            defmt::info!("  Touch at x={}, y={}", point.x, point.y);
-                            // Validate range: 480x800 panel, with 3px margin for phantom touches
-                            if point.x >= 3 && point.x <= 476 && point.y >= 3 && point.y <= 796 {
-                                pass("touch_read_interactive");
-                                touch_detected = true;
-                            } else {
-                                defmt::warn!("  Touch at edge (phantom?), retrying...");
-                                Timer::after(embassy_time::Duration::from_millis(200)).await;
-                                remaining_ms -= 200;
-                            }
-                        }
-                        Err(_) => {
-                            Timer::after(embassy_time::Duration::from_millis(100)).await;
-                            remaining_ms -= 100;
+                Ok(status) if status > 0 => match touch.get_touch(&mut i2c) {
+                    Ok(point) => {
+                        defmt::info!("  Touch at x={}, y={}", point.x, point.y);
+                        if point.x >= 3 && point.x <= 476 && point.y >= 3 && point.y <= 796 {
+                            pass("touch_read_interactive");
+                            touch_detected = true;
+                        } else {
+                            defmt::warn!("  Touch at edge (phantom?), retrying...");
+                            Timer::after(embassy_time::Duration::from_millis(200)).await;
+                            remaining_ms -= 200;
                         }
                     }
-                }
+                    Err(_) => {
+                        Timer::after(embassy_time::Duration::from_millis(100)).await;
+                        remaining_ms -= 100;
+                    }
+                },
                 _ => {
                     Timer::after(embassy_time::Duration::from_millis(100)).await;
                     remaining_ms -= 100;
@@ -136,7 +213,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Summary
+    // Show summary on display
+    fb.clear(Rgb565::new(0x1a, 0x1a, 0x2e));
     let passed = PASSED.load(Ordering::Relaxed);
     let failed = FAILED.load(Ordering::Relaxed);
     let total = passed + failed;
