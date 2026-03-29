@@ -55,13 +55,14 @@ examples/
 ├── test_uart.rs             — USART1 tests (4)
 ├── test_dma.rs              — DMA2 M2M tests (5)
 ├── test_usb.rs              — USB GPIO pin tests (3)
-├── test_usb_cdc.rs          — USB CDC connectivity tests (4, 84MHz PLL)
+├── test_usb_cdc.rs          — USB CDC connectivity tests (3, 84MHz PLL, serial output)
 ├── test_usb_cdc_stress.rs   — USB CDC continuous echo (stress firmware)
 ├── test_sdram_soak.rs       — SDRAM continuous stress (soak firmware)
 └── test_usb_soak.rs         — GPIO soak test (continuous toggle)
 
 tests/
 ├── usb_cdc_stress.py        — Host-side USB stress test (pyserial, 600 packets)
+├── usb_cdc_test.py          — Host-side USB CDC test monitor (pyserial, parses PASS/FAIL)
 └── results/                 — Stress test JSON results (gitignored)
 
 run_tests.sh                 — probe-rs based runner (all non-USB tests)
@@ -101,7 +102,7 @@ undefined. This is an embassy bug. The micronuts firmware solves coexistence by 
 
 ## Test Output Format
 
-All test examples output RTT-compatible lines:
+All test examples output RTT-compatible lines (except `test_usb_cdc` which uses USB CDC serial):
 ```
 TEST <name>: PASS
 TEST <name>: FAIL <reason>
@@ -110,6 +111,7 @@ ALL TESTS PASSED
 ```
 
 `run_tests.sh` parses these for automated pass/fail reporting.
+`tests/usb_cdc_test.py` does the same for USB CDC serial output.
 
 ## USB CDC Stress Test
 
@@ -132,10 +134,29 @@ python3 tests/usb_cdc_stress.py --port /dev/ttyACM0 --count 600
 
 Requirements: `st-flash` (stlink-tools), `arm-none-eabi-objcopy`, `pyserial`.
 
+## USB CDC Test
+
+The USB CDC test validates USB init, CDC class creation, and echo functionality. Results are output over USB serial (no probe-rs needed):
+
+```bash
+# Build and flash (st-flash, NOT probe-rs)
+cargo build --release --target thumbv7em-none-eabihf --example test_usb_cdc
+arm-none-eabi-objcopy -O binary target/thumbv7em-none-eabihf/release/examples/test_usb_cdc test.bin
+st-flash --connect-under-reset write test.bin 0x08000000
+st-flash --connect-under-reset reset
+sleep 15
+
+# Run host-side monitor (sends echo data, parses results)
+python3 tests/usb_cdc_test.py --port /dev/ttyACM0
+```
+
+Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the host script to send data — without it, echo times out after 5s (expected FAIL).
+
 ## Known-Good Pins
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `25d5ecb` | `main` | USB CDC test serial output, host-side monitor, clippy fixes |
 | `3646aa8` | `main` | Fixed RawDsi::read() register and FIFO flow control |
 | `a407fcd` | `feat/hil-tests` | HIL test suite + USART6 UART module. **Used by micronuts firmware** |
 | `31b81d4` | `main` | Full test suite, CI, USB stress test, zero warnings |
@@ -177,7 +198,7 @@ BSP's own test suite run independently on hardware via probe-rs.
 | **test_display** | PASS | 14/14 | SDRAM init, DSI/LTDC, NT35510 detect, color fills, gradient, text, rapid refresh |
 | **test_touch** | PASS | 5/5 | Requires SDRAM+display init (FT6X06 powered from display module). Vendor ID=0x11 at reg 0xA8 |
 | **hw_diag** | 33/38 | Phase 1: 12/15, Phase 2: 21/23 | RNG x3 FAIL (no 48MHz clock at 180MHz PLL). All other subsystems pass |
-| **test_usb_cdc** | PASS | 4/4 | Requires 84MHz PLL. Pin order: PA12(DP), PA11(DM) |
+| **test_usb_cdc** | PENDING | 3/3 | Rewritten for USB serial output (25d5ecb). Requires 84MHz PLL, st-flash deploy, host-side monitor. Not yet tested on hardware with new serial output approach |
 | **USB CDC stress** | 591/600 | 98.5% | Phase 3 first packet timeout, Phase 4 stale buffer (test firmware issue, not USB stack) |
 
 ### Bugs Found and Fixed During Hardware Testing

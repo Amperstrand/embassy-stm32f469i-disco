@@ -101,7 +101,7 @@ config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV4, mul: PllMul::MUL168, divp: 
 config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
 ```
 
-See `examples/test_usb_cdc_stress.rs` for a complete example.
+See `examples/test_usb_cdc.rs` for a complete test example, or `examples/test_usb_cdc_stress.rs` for a stress test.
 
 ## API
 
