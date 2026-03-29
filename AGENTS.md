@@ -88,12 +88,16 @@ run_usb_tests.sh             — st-flash based runner (USB CDC stress test)
 
 ## Clock Configurations
 
-| Config | Sysclk | USB 48MHz | Used by |
-|--------|--------|-----------|---------|
-| 180MHz | HSE/8 * 360 / 2 | PLLSAI/7 | SDRAM, display, touch, hw_diag |
-| 84MHz | HSE/4 * 168 / 2 | PLL1_Q/7 | USB CDC tests |
+| Config | Sysclk | 48MHz source | USB | RNG | Used by |
+|--------|--------|-------------|-----|-----|---------|
+| 180MHz | HSE/8 * 360 / 2 | None | NO | NO | SDRAM, display, touch, hw_diag |
+| 168MHz | HSE/4 * 168 / 2 | PLL1_Q/7 (48.0MHz) | YES | YES | micronuts firmware |
 
-These are incompatible — USB tests cannot run display, and vice versa.
+The 180MHz PLL config cannot produce 48MHz — PLL1_Q=360/7=51.4MHz (out of USB 0.25% tolerance).
+PLLSAI_Q could theoretically provide 48MHz (384/8), but embassy's `init_pll()` zeros
+PLLSAIM on STM32F469 (uses `.write()` instead of `.modify()`), making the VCO input
+undefined. This is an embassy bug. The micronuts firmware solves coexistence by running at
+168MHz with PLL1_Q=48MHz exact.
 
 ## Test Output Format
 
