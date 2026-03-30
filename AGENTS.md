@@ -33,8 +33,8 @@ GitHub Actions runs on push/PR: build library + all examples, `cargo fmt`, `carg
 
 ```
 src/
-├── lib.rs       — Exports: DisplayCtrl, FramebufferView, SdramCtrl, TouchCtrl,
-│                  BoardHint, LcdController, FB_HEIGHT, FB_WIDTH
+├── lib.rs       — Exports: DisplayCtrl, FramebufferView, SdramCtrl, SdramCtrl, TouchCtrl,
+│                  BoardHint, LcdController, FB_HEIGHT, FB_WIDTH, SDRAM_SIZE_BYTES
 └── display.rs   — SdramCtrl (FMC + IS42S32400F-6BL), DisplayCtrl (DSI/LTDC/NT35510),
                    BoardHint, LcdController, detect_panel()
 
@@ -57,6 +57,7 @@ examples/
 ├── test_usb.rs              — USB GPIO pin tests (3)
 ├── test_usb_cdc.rs          — USB CDC connectivity tests (3, 84MHz PLL, serial output)
 ├── test_usb_cdc_stress.rs   — USB CDC continuous echo (stress firmware)
+├── test_itm_swo.rs          — ITM/SWO + USB CDC coexistence (84MHz PLL, ITM debug output)
 ├── test_sdram_soak.rs       — SDRAM continuous stress (soak firmware)
 └── test_usb_soak.rs         — GPIO soak test (continuous toggle)
 
@@ -157,6 +158,7 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `a64458f` | `main` | ITM/SWO example, full rustdoc, SdramCtrl/SDRAM_SIZE_BYTES re-export |
 | `a50f241` | `main` | Stress firmware stale buffer fix, read_vendor_id/read_chip_model, run_usb_cdc_test.sh |
 | `25d5ecb` | `main` | USB CDC test serial output, host-side monitor, clippy fixes |
 | `3646aa8` | `main` | Fixed RawDsi::read() register and FIFO flow control |
