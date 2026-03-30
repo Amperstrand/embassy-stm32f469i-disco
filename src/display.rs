@@ -1,3 +1,21 @@
+//! Display subsystem: SDRAM controller (FMC), DSI/LTDC display driver (NT35510),
+//! panel detection, and framebuffer management.
+//!
+//! # SDRAM
+//!
+//! The IS42S32400F-6BL SDRAM is initialized via FMC in AF12 mode on the full 16 MB bus.
+//! `SdramCtrl` owns the SDRAM handle and provides subslice access for framebuffer allocation.
+//!
+//! # Display
+//!
+//! The NT35510 LCD controller is driven via DSI in burst video mode with LTDC providing
+//! the RGB565 pixel stream. The framebuffer (480×800 pixels) resides in SDRAM.
+//!
+//! # Panel detection
+//!
+//! `detect_panel()` probes the DSI bus to identify the LCD controller chip. DSI reads are
+//! unreliable on this hardware — use `BoardHint::ForceNt35510` to skip probing.
+
 use embassy_stm32::gpio::{AfType, Flex, OutputType, Pull, Speed};
 use embassy_stm32::rcc;
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
@@ -11,12 +29,15 @@ use otm8009a::Otm8009A;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
 use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
 
-#[allow(dead_code)]
 pub const SDRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
-#[allow(dead_code)]
-pub const SDRAM_BASE: usize = 0xC000_0000;
+
+/// Framebuffer width in pixels.
 pub const FB_WIDTH: u16 = 480;
+
+/// Framebuffer height in pixels.
 pub const FB_HEIGHT: u16 = 800;
+
+/// Total number of pixels in the framebuffer.
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
 const FMC_AF12: AfType = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up);
@@ -47,11 +68,21 @@ fn sdram_pin(pin: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>) {
     core::mem::forget(flex);
 }
 
+/// Owning handle to the initialized SDRAM controller (FMC + IS42S32400F-6BL, 16 MB).
+///
+/// Consumes all FMC pins on construction. Must be initialized before `DisplayCtrl`
+/// (which allocates the framebuffer from SDRAM) and before `TouchCtrl`
+/// (FT6X06 is powered from the display module).
 pub struct SdramCtrl {
     mem: *mut u32,
 }
 
 impl SdramCtrl {
+    /// Initialize the SDRAM controller.
+    ///
+    /// Configures all FMC pins to AF12 and runs the IS42S32400F-6BL initialization
+    /// sequence via `stm32-fmc`. `source_clock_hz` is the FMC input clock frequency
+    /// (typically the AHB clock: 180 MHz at PLL1_P=180MHz, 84 MHz at PLL1_P=84MHz).
     pub fn new(p: &mut embassy_stm32::Peripherals, source_clock_hz: u32) -> Self {
         sdram_pin(unsafe { p.PF0.clone_unchecked() });
         sdram_pin(unsafe { p.PF1.clone_unchecked() });
@@ -120,11 +151,15 @@ impl SdramCtrl {
         SdramCtrl { mem }
     }
 
-    #[allow(dead_code)]
+    /// Returns the base address of the SDRAM as a `usize` (0xC000_0000).
     pub fn base_address(&self) -> usize {
         self.mem as usize
     }
 
+    /// Returns a `&'static mut [T]` subslice of the SDRAM starting at `offset_bytes`.
+    ///
+    /// Panics if the requested region exceeds `SDRAM_SIZE_BYTES`.
+    /// Used by `DisplayCtrl::new` to allocate the framebuffer.
     pub fn subslice_mut<T>(&self, offset_bytes: usize, len: usize) -> &'static mut [T] {
         let start = (self.mem as usize) + offset_bytes;
         let end = start + len * core::mem::size_of::<T>();
@@ -132,7 +167,11 @@ impl SdramCtrl {
         unsafe { &mut *core::ptr::slice_from_raw_parts_mut(start as *mut T, len) }
     }
 
-    #[must_use]
+    /// Quick destructive SDRAM integrity test.
+    ///
+    /// Writes `0xDEADBEEF` to the first 1024 u32 words, verifies readback, then zeros them.
+    /// Returns `true` on success.
+    #[must_use = "SDRAM test result should be checked"]
     pub fn test_quick(&self) -> bool {
         let words = unsafe { core::slice::from_raw_parts_mut(self.mem as *mut u32, 1024) };
         for word in words.iter_mut() {
@@ -586,21 +625,36 @@ impl DsiHostCtrlIo for RawDsi {
 
 // ── Display panel detection ──────────────────────────────────────────
 
+/// LCD panel controller chip identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LcdController {
+    /// NT35510 — the panel shipped on the STM32F469I-Discovery board.
     Nt35510,
+    /// OTM8009A — alternative panel (not on this board, but supported by the BSP).
     Otm8009a,
 }
 
+/// Hint for panel auto-detection in `DisplayCtrl::new`.
+///
+/// DSI reads are unreliable on this hardware. Use `ForceNt35510` for normal operation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardHint {
+    /// Probe the panel via DSI reads up to 3 retries, fall back to NT35510.
     Auto,
+    /// Assume NT35510 panel, skip DSI probe. Recommended for normal use.
     ForceNt35510,
+    /// Assume OTM8009A panel, skip DSI probe.
     ForceOtm8009a,
 }
 
 const PROBE_RETRIES: u32 = 3;
 
+/// Detect which LCD controller is present.
+///
+/// Probes via DSI short read up to `PROBE_RETRIES` times. Falls back to `Nt35510`
+/// if probe is inconclusive. With `Auto` hint, DSI reads may fail — this is a known
+/// hardware limitation (see AGENTS.md "DSI Probe Reads Fail").
+#[must_use = "detected panel should be used to select initialization"]
 pub fn detect_panel(hint: BoardHint) -> LcdController {
     if hint == BoardHint::ForceNt35510 {
         return LcdController::Nt35510;
@@ -646,11 +700,23 @@ pub fn detect_panel(hint: BoardHint) -> LcdController {
 
 // ── Display init (orchestrator) ────────────────────────────────────────
 
+/// Owning handle to the display subsystem (DSI + LTDC + NT35510).
+///
+/// Holds the framebuffer in SDRAM. Construct with `DisplayCtrl::new` after initializing
+/// `SdramCtrl`. Use `fb()` to obtain a `FramebufferView` for rendering.
 pub struct DisplayCtrl {
     framebuffer: &'static mut [u16],
 }
 
 impl DisplayCtrl {
+    /// Full display initialization pipeline.
+    ///
+    /// Performs panel detection, LCD reset pulse (20ms low + 140ms high), DSI PHY init
+    /// (500 MHz PLL), LTDC layer 1 configuration (RGB565, 480×800), and NT35510
+    /// `init_rgb565` sequence. Allocates the framebuffer as the first `FB_SIZE` u16
+    /// values in SDRAM.
+    ///
+    /// Panics on NT35510 init failure.
     pub fn new(
         sdram: &SdramCtrl,
         lcd_reset: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>,
@@ -696,6 +762,8 @@ impl DisplayCtrl {
         }
     }
 
+    /// Returns a [`FramebufferView`] for rendering via `embedded-graphics`.
+    #[must_use = "framebuffer view should be used for rendering"]
     pub fn fb(&mut self) -> FramebufferView<'_> {
         FramebufferView {
             buffer: self.framebuffer,
@@ -703,11 +771,18 @@ impl DisplayCtrl {
     }
 }
 
+/// Borrowed view into the raw RGB565 framebuffer.
+///
+/// Implements [`DrawTarget`] (clipped pixel writes) and [`OriginDimensions`] (480×800).
+/// Use [`clear()`](FramebufferView::clear) for fast full-screen fills.
 pub struct FramebufferView<'a> {
     buffer: &'a mut [u16],
 }
 
 impl<'a> FramebufferView<'a> {
+    /// Fast fill the entire framebuffer with a single color (memset-style).
+    ///
+    /// Prefer this over `DrawTarget::clear()` for full-screen clears.
     pub fn clear(&mut self, color: Rgb565) {
         let raw = color.into_storage();
         for pixel in self.buffer.iter_mut() {
