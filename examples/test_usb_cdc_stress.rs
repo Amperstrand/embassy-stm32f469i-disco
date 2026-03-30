@@ -87,6 +87,7 @@ async fn main(_spawner: Spawner) {
         led.set_high();
         let mut rx_buf = [0u8; 256];
         loop {
+            rx_buf.fill(0xFF);
             match embassy_futures::select::select(class.read_packet(&mut rx_buf), heartbeat.next())
                 .await
             {

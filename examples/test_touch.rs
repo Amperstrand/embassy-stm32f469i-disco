@@ -121,7 +121,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 2: FT6X06 chip ID read
     defmt::info!("TEST ft6x06_chip_id: RUNNING");
-    match touch.read_chip_id(&mut i2c) {
+    match touch.read_vendor_id(&mut i2c) {
         Ok(chip_id) => {
             defmt::info!("  FT6X06 vendor ID (0xA8): {:#04X}", chip_id);
             if chip_id == 0x11 {

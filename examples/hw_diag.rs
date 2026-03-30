@@ -837,7 +837,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 i2c::Config::default(),
             );
             let touch = TouchCtrl::new();
-            match touch.read_chip_id(&mut i2c) {
+            match touch.read_vendor_id(&mut i2c) {
                 Ok(id) => id == 0x11,
                 Err(_) => false,
             }

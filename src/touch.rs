@@ -43,12 +43,22 @@ impl TouchCtrl {
         Ok(TouchPoint { x, y })
     }
 
-    pub fn read_chip_id(
+    pub fn read_vendor_id(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
     ) -> Result<u8, ()> {
         let mut buf = [0u8; 1];
         i2c.blocking_write_read(self.i2c_addr, &[0xA8], &mut buf)
+            .map_err(|_| ())?;
+        Ok(buf[0])
+    }
+
+    pub fn read_chip_model(
+        &self,
+        i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
+    ) -> Result<u8, ()> {
+        let mut buf = [0u8; 1];
+        i2c.blocking_write_read(self.i2c_addr, &[0xA3], &mut buf)
             .map_err(|_| ())?;
         Ok(buf[0])
     }
