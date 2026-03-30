@@ -110,7 +110,7 @@ See `examples/test_usb_cdc.rs` for a complete test example, or `examples/test_us
 | `DisplayCtrl` | struct | DSI/LTDC display controller |
 | `FramebufferView` | struct | DrawTarget for embedded-graphics |
 | `SdramCtrl` | struct | FMC SDRAM controller (16 MB) |
-| `TouchCtrl` | struct | FT6X06 touch controller |
+| `TouchCtrl` | struct | FT6X06 touch controller (`read_vendor_id`, `read_chip_model`, `get_touch`) |
 | `BoardHint` | enum | `Auto`, `ForceNt35510`, `ForceOtm8009a` |
 | `FB_HEIGHT` | const | 800 |
 | `FB_WIDTH` | const | 480 |

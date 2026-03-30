@@ -845,6 +845,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
     };
 
     unsafe {
+        tpass_fn("Touch Chip Model", || {
+            let mut i2c = i2c::I2c::new_blocking(
+                peri.I2C1.clone_unchecked(),
+                peri.PB8.clone_unchecked(),
+                peri.PB9.clone_unchecked(),
+                i2c::Config::default(),
+            );
+            let touch = TouchCtrl::new();
+            match touch.read_chip_model(&mut i2c) {
+                Ok(model) => matches!(model, 0x06 | 0x36 | 0x64),
+                Err(_) => false,
+            }
+        })
+    };
+
+    unsafe {
         tpass_fn("Touch Idle Status", || {
             let mut i2c = i2c::I2c::new_blocking(
                 peri.I2C1.clone_unchecked(),

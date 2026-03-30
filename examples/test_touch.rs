@@ -120,23 +120,43 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let touch = TouchCtrl::new();
 
     // Test 2: FT6X06 chip ID read
-    defmt::info!("TEST ft6x06_chip_id: RUNNING");
+    defmt::info!("TEST ft6x06_vendor_id: RUNNING");
     match touch.read_vendor_id(&mut i2c) {
-        Ok(chip_id) => {
-            defmt::info!("  FT6X06 vendor ID (0xA8): {:#04X}", chip_id);
-            if chip_id == 0x11 {
-                pass("ft6x06_chip_id");
+        Ok(vendor_id) => {
+            defmt::info!("  FT6X06 vendor ID (0xA8): {:#04X}", vendor_id);
+            if vendor_id == 0x11 {
+                pass("ft6x06_vendor_id");
             } else {
-                defmt::warn!("  Unexpected vendor ID {:#04X}, expected 0x11", chip_id);
-                pass("ft6x06_chip_id");
+                defmt::warn!("  Unexpected vendor ID {:#04X}, expected 0x11", vendor_id);
+                pass("ft6x06_vendor_id");
             }
         }
         Err(_) => {
-            fail("ft6x06_chip_id", "I2C read failed");
+            fail("ft6x06_vendor_id", "I2C read failed");
         }
     }
 
-    // Test 3: TD status (should be 0 when no touch)
+    // Test 3: FT6X06 chip model read
+    defmt::info!("TEST ft6x06_chip_model: RUNNING");
+    match touch.read_chip_model(&mut i2c) {
+        Ok(model) => {
+            defmt::info!("  FT6X06 chip model (0xA3): {:#04X}", model);
+            match model {
+                0x06 | 0x36 | 0x64 => {
+                    pass("ft6x06_chip_model");
+                }
+                _ => {
+                    defmt::warn!("  Unknown chip model {:#04X} (0x06=FT6206, 0x36=FT6236, 0x64=FT6236U/FT6336U)", model);
+                    pass("ft6x06_chip_model");
+                }
+            }
+        }
+        Err(_) => {
+            fail("ft6x06_chip_model", "I2C read failed");
+        }
+    }
+
+    // Test 4: TD status (should be 0 when no touch)
     defmt::info!("TEST td_status_idle: RUNNING");
     match touch.td_status(&mut i2c) {
         Ok(status) => {
@@ -153,7 +173,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 4: I2C bus scan
+    // Test 5: I2C bus scan
     defmt::info!("TEST i2c_bus_scan: RUNNING");
     {
         use embedded_hal_02::blocking::i2c::Read;
@@ -174,7 +194,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
     }
 
-    // Test 5: Touch read (interactive)
+    // Test 6: Touch read (interactive)
     defmt::info!("TEST touch_read_interactive: RUNNING");
     defmt::info!("  >>> Touch the screen within 10 seconds <<<");
     {

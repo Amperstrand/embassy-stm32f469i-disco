@@ -51,7 +51,7 @@ examples/
 ├── test_sdram.rs            — SDRAM fast tests (14)
 ├── test_sdram_full.rs       — SDRAM exhaustive tests (13)
 ├── test_display.rs          — Display/DSI/LTDC tests (15)
-├── test_touch.rs            — FT6X06 touch tests (5)
+├── test_touch.rs            — FT6X06 touch tests (6)
 ├── test_uart.rs             — USART1 tests (4)
 ├── test_dma.rs              — DMA2 M2M tests (5)
 ├── test_usb.rs              — USB GPIO pin tests (3)
