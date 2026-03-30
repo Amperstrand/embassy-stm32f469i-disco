@@ -67,6 +67,7 @@ tests/
 
 run_tests.sh                 — probe-rs based runner (all non-USB tests)
 run_usb_tests.sh             — st-flash based runner (USB CDC stress test)
+run_usb_cdc_test.sh          — st-flash based runner (USB CDC connectivity test)
 ```
 
 ## Hardware
@@ -156,6 +157,7 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `a50f241` | `main` | Stress firmware stale buffer fix, read_vendor_id/read_chip_model, run_usb_cdc_test.sh |
 | `25d5ecb` | `main` | USB CDC test serial output, host-side monitor, clippy fixes |
 | `3646aa8` | `main` | Fixed RawDsi::read() register and FIFO flow control |
 | `a407fcd` | `feat/hil-tests` | HIL test suite + USART6 UART module. **Used by micronuts firmware** |
@@ -212,7 +214,7 @@ BSP's own test suite run independently on hardware via probe-rs.
 | `hw_diag` RNG hang | Same 48MHz clock issue as test_rng at 180MHz PLL | Added timeout counters to RNG busy-wait loops |
 | `hw_diag` ADC crash | Same SMPR2 register index bug as test_adc | Fixed SMPR2 indices |
 | `run_usb_tests.sh` arg parsing | `for arg in "$@"` + `shift` doesn't work in bash | Changed to `while [ $# -gt 0 ]` loop |
-| FT6X06 chip ID mismatch | BSP `read_chip_id()` reads reg 0xA8 (vendor ID=0x11), not reg 0xA3 (chip model). Test expected wrong values 0xCC/0xA3 | Fixed expected value to 0x11. See #9 |
+| FT6X06 chip ID mismatch | BSP `read_chip_id()` reads reg 0xA8 (vendor ID=0x11), not reg 0xA3 (chip model). Test expected wrong values 0xCC/0xA3 | Renamed to `read_vendor_id()`, added `read_chip_model()`. See #9 (closed) |
 
 ### What's NOT Tested (on this BSP directly)
 
