@@ -158,6 +158,7 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `e202e9a` | `main` | docs: update AGENTS.md with ITM example, re-exports, known-good pins |
 | `a64458f` | `main` | ITM/SWO example, full rustdoc, SdramCtrl/SDRAM_SIZE_BYTES re-export |
 | `a50f241` | `main` | Stress firmware stale buffer fix, read_vendor_id/read_chip_model, run_usb_cdc_test.sh |
 | `25d5ecb` | `main` | USB CDC test serial output, host-side monitor, clippy fixes |

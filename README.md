@@ -2,6 +2,11 @@
 
 Board support package for the [STM32F469I-Discovery](https://www.st.com/en/evaluation-tools/stm32f469i-discovery.html) board, built on the [Embassy](https://embassy.dev/) async framework.
 
+> **Related BSP:** A sync (blocking) version using `stm32f4xx-hal` is available at [stm32f469i-disc](https://github.com/Amperstrand/stm32f469i-disc).
+>
+> - **Sync BSP:** Use for blocking HAL, `stm32f4xx-hal` compatibility, simpler code paths
+> - **Async BSP (this repo):** Use for Embassy async/await, event-driven applications, multitasking
+
 ## Quick Start
 
 ```bash
