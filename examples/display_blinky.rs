@@ -5,6 +5,7 @@ extern crate defmt_rtt;
 extern crate panic_probe;
 
 use embassy_stm32::rcc::{
+    mux,
     AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv, PllRDiv,
     PllSource, Sysclk,
 };
@@ -72,9 +73,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
         prediv: PllPreDiv::DIV8,
         mul: PllMul::MUL384,
         divp: None,
-        divq: None,
+        divq: Some(PllQDiv::DIV8),
         divr: Some(PllRDiv::DIV7),
     });
+    config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
     config.rcc.sys = Sysclk::PLL1_P;
     config.rcc.ahb_pre = AHBPrescaler::DIV1;
     config.rcc.apb1_pre = APBPrescaler::DIV4;
