@@ -1,4 +1,4 @@
-//! Display subsystem: SDRAM controller (FMC), DSI/LTDC display driver (NT35510),
+//! Display subsystem: SDRAM controller (FMC), DSI/LTDC display driver (NT35510/OTM8009A),
 //! panel detection, and framebuffer management.
 //!
 //! # SDRAM
@@ -8,13 +8,16 @@
 //!
 //! # Display
 //!
-//! The NT35510 LCD controller is driven via DSI in burst video mode with LTDC providing
-//! the RGB565 pixel stream. The framebuffer (480×800 pixels) resides in SDRAM.
+//! The LCD controller (NT35510 on B08+ or OTM8009A on B07) is driven via DSI in burst
+//! video mode with LTDC providing the RGB565 pixel stream. The framebuffer (480×800
+//! pixels) resides in SDRAM.
 //!
 //! # Panel detection
 //!
-//! `detect_panel()` probes the DSI bus to identify the LCD controller chip. DSI reads are
-//! unreliable on this hardware — use `BoardHint::ForceNt35510` to skip probing.
+//! The STM32F469I-Discovery board exists in two hardware revisions with different LCD
+//! controllers: B07 (OTM8009A) and B08+ (NT35510). `detect_panel()` probes the DSI bus
+//! after init to identify the chip. Use `BoardHint::ForceNt35510` or `ForceOtm8009a`
+//! to skip probing if auto-detection is unreliable on your hardware.
 
 use embassy_stm32::gpio::{AfType, Flex, OutputType, Pull, Speed};
 use embassy_stm32::rcc;
@@ -28,6 +31,17 @@ use nt35510::Nt35510;
 use otm8009a::Otm8009A;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
 use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
+
+/// Adapter that implements `embedded_hal::blocking::delay::DelayMs<u32>` for embassy's
+/// `Delay`, which only implements `DelayNs`. Required because the `otm8009a` crate
+/// depends on `embedded-hal` 0.2 (blocking delay traits).
+struct DelayMsAdapter;
+
+impl embedded_hal_02::blocking::delay::DelayMs<u32> for DelayMsAdapter {
+    fn delay_ms(&mut self, ms: u32) {
+        embedded_hal::delay::DelayNs::delay_ms(&mut embassy_time::Delay, ms);
+    }
+}
 
 pub const SDRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
@@ -278,7 +292,6 @@ unsafe fn dsi_init() {
     let active_width = FB_WIDTH as u32; // 480
     let active_height = FB_HEIGHT as u32; // 800
     let lane_byte_clk = 500_000_000u32; // 500MHz (VCO/ODF=500/1)
-    let pixel_clk = 27_429u32; // ~27.4 MHz (from sync BSP)
 
     // Shutdown
     reg32_clear(DSI_BASE, CR, 1 << 2); // CMDM=0
@@ -314,8 +327,8 @@ unsafe fn dsi_init() {
     reg32_modify(DSI_BASE, WRPCR, |w| {
         (w & !(0x7F << 2 | 0x0F << 11 | 0x03 << 16))
         | (125 << 2)    // NDIV=125
-        | (0x02 << 11)  // IDF=2
-        | (0x00 << 16) // ODF=1
+        | (0x02 << 11)  // IDF=2 (div2)
+        | (0x00 << 16) // ODF=0 (div1)
     });
     reg32_set(DSI_BASE, WRPCR, 1 << 0); // PLLEN=1
 
@@ -340,7 +353,6 @@ unsafe fn dsi_init() {
     // Video mode: burst (matching sync BSP exactly)
     reg32_clear(DSI_BASE, CR, 1 << 2); // CMDM=0
     reg32_clear(DSI_BASE, WCFGR, 1 << 0); // DSIM=0 (video mode, NOT command mode)
-    reg32_modify(DSI_BASE, VMCR, |w| (w & !0x03) | 0x02); // VMT=2 (burst)
     reg32_write(DSI_BASE, VPCR, active_width); // VPSIZE=480
     reg32_write(DSI_BASE, VCCR, 0); // NUMC=0
     reg32_write(DSI_BASE, VNPCR, 0); // NPSIZE=0
@@ -349,43 +361,35 @@ unsafe fn dsi_init() {
     reg32_write(DSI_BASE, LCOLCR, 0x00); // COLC=SixteenBitsConfig1 (RGB565)
     reg32_modify(DSI_BASE, WCFGR, |w| (w & !(0x07 << 1)) | (0x00 << 1)); // COLMUX=SixteenBitsConfig1
 
-    // DSI timing (matching sync BSP calculations)
-    // HSA = h_sync * lane_byte_clk / pixel_clk = 2 * 500M / 27429 = ~36500 → fits in u16
-    let dsi_hsa =
-        ((h_sync as u64 * lane_byte_clk as u64 + pixel_clk as u64 / 2) / pixel_clk as u64) as u32;
-    let dsi_hbp = ((h_back_porch as u64 * lane_byte_clk as u64 + pixel_clk as u64 / 2)
-        / pixel_clk as u64) as u32;
-    let dsi_hline = (((active_width + h_sync + h_back_porch + h_front_porch) as u64
-        * lane_byte_clk as u64
-        + pixel_clk as u64 / 2)
-        / pixel_clk as u64) as u32;
-    let dsi_vsa =
-        ((v_sync as u64 * lane_byte_clk as u64 + pixel_clk as u64 / 2) / pixel_clk as u64) as u32;
-    let dsi_vbp = ((v_back_porch as u64 * lane_byte_clk as u64 + pixel_clk as u64 / 2)
-        / pixel_clk as u64) as u32;
-    let dsi_vfp = ((v_front_porch as u64 * lane_byte_clk as u64 + pixel_clk as u64 / 2)
-        / pixel_clk as u64) as u32;
+    // VMCR: correct bit positions per stm32f4 PAC (VMCR.rs)
+    // Bits 8-15: LP transition enables + LPCE
+    // Sync BSP: LPVSAE(8), LPVBPE(9), LPVFPE(10), LPVAE(11), LPHBPE(12), LPHFPE(13), LPCE(15)
+    // VMT=2 (burst) set separately below
+    reg32_write(
+        DSI_BASE,
+        VMCR,
+        (0x02) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 15),
+    );
+
+    // DSI timing (matching sync BSP calculation exactly)
+    // Sync HAL: hsa = h_sync * f_pix_khz / f_ltdc_khz
+    // where f_pix_khz = lane_byte_clk / 1000 / 8 = 62500 kHz
+    // and f_ltdc_khz = 27429 kHz
+    let f_pix_khz: u32 = lane_byte_clk / 1_000 / 8; // 62,500 kHz
+    let f_ltdc_khz: u32 = 27_429; // ~27.4 MHz LTDC pixel clock
+
+    let dsi_hsa = ((h_sync as u32) * f_pix_khz / f_ltdc_khz) as u32;
+    let dsi_hbp = ((h_back_porch as u32) * f_pix_khz / f_ltdc_khz) as u32;
+    let dsi_hline = (((active_width + h_sync + h_back_porch + h_front_porch) as u32) * f_pix_khz
+        / f_ltdc_khz) as u32;
 
     reg32_write(DSI_BASE, VHSACR, dsi_hsa);
     reg32_write(DSI_BASE, VHBPACR, dsi_hbp);
     reg32_write(DSI_BASE, VLCR, dsi_hline);
-    reg32_write(DSI_BASE, VVSACR, dsi_vsa);
-    reg32_write(DSI_BASE, VVBPCR, dsi_vbp);
-    reg32_write(DSI_BASE, VVFPCR, dsi_vfp);
+    reg32_write(DSI_BASE, VVSACR, v_sync);
+    reg32_write(DSI_BASE, VVBPCR, v_back_porch);
+    reg32_write(DSI_BASE, VVFPCR, v_front_porch);
     reg32_write(DSI_BASE, VVACR, active_height); // VA=800
-
-    // LP command enable + all LP transitions (matching sync BSP)
-    reg32_set(
-        DSI_BASE,
-        VMCR,
-        1 << 20 | // LPCE
-        1 << 6  | // LPHFPE
-        1 << 7  | // LPHBPE
-        1 << 8  | // LPVAE
-        1 << 9  | // LPVFPE
-        1 << 10 | // LPVBPE
-        1 << 11, // LPVSAE
-    );
 
     reg32_write(DSI_BASE, LPMCR, (64 << 0) | (64 << 8)); // LPSIZE=64, VLPSIZE=64
 
@@ -499,7 +503,7 @@ unsafe fn ltdc_init(fb_addr: u32) {
     reg32_write(LTDC_BASE, SRCR, 0x01); // IMR=reload
     while reg32(LTDC_BASE, SRCR) & 0x01 != 0 {}
 
-    reg32_set(LTDC_BASE, GCR, 1 << 0); // LTDCEN=1
+    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, DEN=1
 }
 
 // ── DsiHostCtrlIo adapter (raw FIFO writes/reads) ──────────────────
@@ -634,12 +638,22 @@ pub enum LcdController {
     Otm8009a,
 }
 
-/// Hint for panel auto-detection in `DisplayCtrl::new`.
+/// Hint for panel auto-detection in [`DisplayCtrl::new`].
 ///
-/// DSI reads are unreliable on this hardware. Use `ForceNt35510` for normal operation.
+/// The STM32F469I-Discovery board exists in two revisions:
+/// - **B07** (early production): OTM8009A panel
+/// - **B08+** (later production): NT35510 panel
+///
+/// There is no GPIO strapping or other hardware mechanism to differentiate them.
+/// Panel detection uses a DSI read of register 0xDA (NT35510 returns 0x80,
+/// OTM8009A returns 0x40). Use `ForceNt35510` or `ForceOtm8009a` if probing fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardHint {
     /// Probe the panel via DSI reads up to 3 retries, fall back to NT35510.
+    ///
+    /// **Note:** Early B07 boards shipped with an OTM8009A panel. Auto-detection reads
+    /// register 0xDA — NT35510 returns 0x80, OTM8009A returns 0x40. If you have a B07
+    /// board and auto-detection fails, use `ForceOtm8009a`.
     Auto,
     /// Assume NT35510 panel, skip DSI probe. Recommended for normal use.
     ForceNt35510,
@@ -698,12 +712,30 @@ pub fn detect_panel(hint: BoardHint) -> LcdController {
     LcdController::Nt35510
 }
 
+// ── DSI command mode helpers ───────────────────────────────────────────
+
+unsafe fn dsi_set_lp_command_mode() {
+    const CMCR: usize = DSI_BASE + 0x68;
+    const WPCR1: usize = DSI_BASE + 0x41C;
+    reg32_set(DSI_BASE, WPCR1, 1 << 22); // force_rx_low_power(true): FLPRXLPM
+    reg32_set(DSI_BASE, CMCR, (0x7FF << 7) | (1 << 24)); // AllInLowPower
+}
+
+unsafe fn dsi_set_hs_command_mode() {
+    const CMCR: usize = DSI_BASE + 0x68;
+    const WPCR1: usize = DSI_BASE + 0x41C;
+    reg32_clear(DSI_BASE, WPCR1, 1 << 22); // force_rx_low_power(false)
+    reg32_clear(DSI_BASE, CMCR, (0x7FF << 7) | (1 << 24) | (1 << 0)); // AllInHighSpeed
+}
+
 // ── Display init (orchestrator) ────────────────────────────────────────
 
-/// Owning handle to the display subsystem (DSI + LTDC + NT35510).
+/// Owning handle to the display subsystem (DSI + LTDC + panel controller).
 ///
-/// Holds the framebuffer in SDRAM. Construct with `DisplayCtrl::new` after initializing
-/// `SdramCtrl`. Use `fb()` to obtain a `FramebufferView` for rendering.
+/// Holds the framebuffer in SDRAM. Construct with [`DisplayCtrl::new`] after initializing
+/// [`SdramCtrl`]. Use [`fb()`](DisplayCtrl::fb) to obtain a [`FramebufferView`] for rendering.
+///
+/// Supports both NT35510 (B08+ boards) and OTM8009A (B07 boards) panels.
 pub struct DisplayCtrl {
     framebuffer: &'static mut [u16],
 }
@@ -711,19 +743,23 @@ pub struct DisplayCtrl {
 impl DisplayCtrl {
     /// Full display initialization pipeline.
     ///
-    /// Performs panel detection, LCD reset pulse (20ms low + 140ms high), DSI PHY init
-    /// (500 MHz PLL), LTDC layer 1 configuration (RGB565, 480×800), and NT35510
-    /// `init_rgb565` sequence. Allocates the framebuffer as the first `FB_SIZE` u16
-    /// values in SDRAM.
+    /// Performs LCD reset pulse (20 ms low + 140 ms high), DSI PHY init (500 MHz PLL),
+    /// panel auto-detection, LTDC layer 1 configuration (RGB565, 480×800), and panel-
+    /// specific initialization (NT35510 or OTM8009A). Allocates the framebuffer as the
+    /// first `FB_SIZE` u16 values in SDRAM.
     ///
-    /// Panics on NT35510 init failure.
+    /// Panel detection happens after DSI init so the bus is alive for probing. With
+    /// `BoardHint::Auto`, detection retries up to 3 times and falls back to NT35510.
+    /// Use `BoardHint::ForceNt35510` or `BoardHint::ForceOtm8009a` to skip probing.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the detected panel's init sequence fails.
     pub fn new(
         sdram: &SdramCtrl,
         lcd_reset: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
     ) -> Self {
-        let _controller = detect_panel(hint);
-
         // LCD reset
         let mut reset_pin = embassy_stm32::gpio::Output::new(
             lcd_reset,
@@ -748,14 +784,51 @@ impl DisplayCtrl {
             ltdc_init(fb_addr);
         }
 
-        // nt35510 panel init
-        embassy_time::Delay.delay_ms(120);
-        let mut panel = Nt35510::new();
-        let mut dsi_adapter = RawDsi;
-        let mut delay = embassy_time::Delay;
-        panel
-            .init_rgb565(&mut dsi_adapter, &mut delay)
-            .expect("NT35510 init failed");
+        let controller = detect_panel(hint);
+
+        unsafe {
+            dsi_set_lp_command_mode();
+        }
+
+        match controller {
+            LcdController::Nt35510 => {
+                embassy_time::Delay.delay_ms(120);
+                let mut panel = Nt35510::new();
+                let mut dsi_adapter = RawDsi;
+                let mut delay = embassy_time::Delay;
+                panel
+                    .init_rgb565(
+                        &mut dsi_adapter,
+                        &mut delay,
+                        nt35510::Mode::Portrait,
+                        nt35510::ColorMap::Rgb,
+                    )
+                    .expect("NT35510 init failed");
+            }
+            #[cfg(feature = "display")]
+            LcdController::Otm8009a => {
+                use otm8009a::{ColorMap, FrameRate, Mode, Otm8009AConfig};
+
+                embassy_time::Delay.delay_ms(120);
+                let mut panel = Otm8009A::new();
+                let mut dsi_adapter = RawDsi;
+                let mut delay = DelayMsAdapter;
+                let config = Otm8009AConfig {
+                    frame_rate: FrameRate::_60Hz,
+                    mode: Mode::Landscape,
+                    color_map: ColorMap::Rgb,
+                    cols: FB_WIDTH,
+                    rows: FB_HEIGHT,
+                };
+                panel
+                    .init(&mut dsi_adapter, config, &mut delay)
+                    .expect("OTM8009A init failed");
+            }
+        }
+
+        unsafe {
+            dsi_set_hs_command_mode();
+        }
 
         DisplayCtrl {
             framebuffer: fb_slice,
