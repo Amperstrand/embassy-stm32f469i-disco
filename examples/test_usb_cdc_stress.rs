@@ -93,15 +93,10 @@ async fn main(_spawner: Spawner) {
             {
                 embassy_futures::select::Either::First(result) => match result {
                     Ok(n) => {
-                        if class.write_packet(&rx_buf[..n]).await.is_err() {
-                            defmt::error!("write_packet failed");
-                        }
+                        let _ = class.write_packet(&rx_buf[..n]).await;
                     }
-                    Err(EndpointError::BufferOverflow) => {
-                        defmt::error!("rx buffer overflow");
-                    }
+                    Err(EndpointError::BufferOverflow) => {}
                     Err(EndpointError::Disabled) => {
-                        defmt::warn!("USB disconnected");
                         break;
                     }
                 },

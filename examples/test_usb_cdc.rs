@@ -104,6 +104,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
         let mut buf = [0u8; 64];
         let mut echo_ok = false;
+        buf.fill(0xFF);
         for _ in 0..5u32 {
             match embassy_futures::select::select(
                 class.read_packet(&mut buf),
