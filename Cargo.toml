@@ -12,11 +12,13 @@ categories = ["embedded", "hardware-support", "no-std"]
 default = ["display", "touch"]
 display = ["dep:stm32-fmc", "dep:nt35510", "dep:embedded-display-controller", "dep:embedded-graphics", "dep:otm8009a", "dep:embedded-hal-02"]
 touch = []
+defmt = ["dep:defmt"]
 
 [dependencies]
 embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
 embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
 cortex-m = "0.7"
+defmt = { version = "1.0", optional = true }
 embedded-hal = "1.0"
 embedded-hal-02 = { package = "embedded-hal", version = "0.2.7", optional = true }
 

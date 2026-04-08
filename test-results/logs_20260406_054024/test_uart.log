@@ -1,0 +1,12 @@
+[31mERROR[0m [2mnusb::error[0m[2m:[0m interface is busy (errno 16)
+[33m WARN[0m [2mprobe_rs::probe::list::linux[0m[2m:[0m Make sure you have reloaded udev rules after setting everything up
+[33m WARN[0m [2mprobe_rs::probe::list::linux[0m[2m:[0m Read more under https://probe.rs/docs/getting-started/probe-setup/
+[33m WARN[0m [2mprobe_rs::probe::list::linux[0m[2m:[0m There seems no probe-rs rule to be installed.
+[33m WARN[0m [2mprobe_rs::probe::list::linux[0m[2m:[0m Read more under https://probe.rs/docs/getting-started/probe-setup/
+[33m WARN[0m [2mprobe_rs::probe::list::linux[0m[2m:[0m If you manage your rules differently, put an empty rule file with 'probe-rs' in the name in /etc/udev/rules.d.
+Error: Failed to open probe: Failed to open the debug probe.
+
+Caused by:
+    0: The debug probe could not be created.
+    1: A USB error occurred.
+    2: interface is busy (errno 16)

@@ -1,0 +1,14 @@
+     Finished in 1.82s
+[INFO ] === RNG Test Suite === (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:90)
+[INFO ] TEST rng_not_zeros: RUNNING (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:104)
+[INFO ] TEST rng_not_zeros: PASS (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:19)
+[INFO ] TEST rng_uniqueness: RUNNING (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:122)
+[INFO ]   unique: 64/64 (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:145)
+[INFO ] TEST rng_uniqueness: PASS (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:19)
+[INFO ] TEST rng_consecutive_differ: RUNNING (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:154)
+[INFO ] TEST rng_consecutive_differ: PASS (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:19)
+[INFO ] === RNG Test Summary === (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:169)
+[INFO ] SUMMARY: 3/3 passed (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:170)
+[INFO ] ALL TESTS PASSED (test_rng embassy-stm32f469i-disco/examples/test_rng.rs:172)
+Received SIGTERM, exiting
+Exited by user request

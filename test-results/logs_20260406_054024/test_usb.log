@@ -1,0 +1,13 @@
+     Finished in 1.83s
+[INFO ] === USB GPIO Test Suite === (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:24)
+[INFO ] TEST usb_gpio_pins: RUNNING (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:34)
+[INFO ] TEST usb_gpio_pins: PASS (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:17)
+[INFO ] TEST usb_gpio_stress: RUNNING (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:49)
+[INFO ] TEST usb_gpio_stress: PASS (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:17)
+[INFO ] TEST usb_led_coexistence: RUNNING (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:62)
+[INFO ] TEST usb_led_coexistence: PASS (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:17)
+[INFO ] === USB GPIO Test Summary === (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:76)
+[INFO ] SUMMARY: 3/3 passed (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:77)
+[INFO ] ALL TESTS PASSED (test_usb embassy-stm32f469i-disco/examples/test_usb.rs:79)
+Received SIGTERM, exiting
+Exited by user request

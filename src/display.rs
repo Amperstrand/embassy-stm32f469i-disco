@@ -1,23 +1,5 @@
 //! Display subsystem: SDRAM controller (FMC), DSI/LTDC display driver (NT35510/OTM8009A),
 //! panel detection, and framebuffer management.
-//!
-//! # SDRAM
-//!
-//! The IS42S32400F-6BL SDRAM is initialized via FMC in AF12 mode on the full 16 MB bus.
-//! `SdramCtrl` owns the SDRAM handle and provides subslice access for framebuffer allocation.
-//!
-//! # Display
-//!
-//! The LCD controller (NT35510 on B08+ or OTM8009A on B07) is driven via DSI in burst
-//! video mode with LTDC providing the RGB565 pixel stream. The framebuffer (480×800
-//! pixels) resides in SDRAM.
-//!
-//! # Panel detection
-//!
-//! The STM32F469I-Discovery board exists in two hardware revisions with different LCD
-//! controllers: B07 (OTM8009A) and B08+ (NT35510). `detect_panel()` probes the DSI bus
-//! after init to identify the chip. Use `BoardHint::ForceNt35510` or `ForceOtm8009a`
-//! to skip probing if auto-detection is unreliable on your hardware.
 
 use embassy_stm32::gpio::{AfType, Flex, OutputType, Pull, Speed};
 use embassy_stm32::rcc;
@@ -32,26 +14,32 @@ use otm8009a::Otm8009A;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
 use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
 
-/// Adapter that implements `embedded_hal::blocking::delay::DelayMs<u32>` for embassy's
-/// `Delay`, which only implements `DelayNs`. Required because the `otm8009a` crate
-/// depends on `embedded-hal` 0.2 (blocking delay traits).
+#[cfg(feature = "defmt")]
+use defmt as _;
+
+struct BusyDelay;
+
+impl DelayNs for BusyDelay {
+    fn delay_ns(&mut self, ns: u32) {
+        let ticks = (ns as u64 * 168) / 1000;
+        cortex_m::asm::delay(ticks.max(1) as u32);
+    }
+}
+
+/// Adapter for OTM8009A (requires embedded-hal 0.2 blocking delay traits).
+#[cfg(feature = "display")]
 struct DelayMsAdapter;
 
+#[cfg(feature = "display")]
 impl embedded_hal_02::blocking::delay::DelayMs<u32> for DelayMsAdapter {
     fn delay_ms(&mut self, ms: u32) {
-        embedded_hal::delay::DelayNs::delay_ms(&mut embassy_time::Delay, ms);
+        BusyDelay.delay_ms(ms);
     }
 }
 
 pub const SDRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
-
-/// Framebuffer width in pixels.
 pub const FB_WIDTH: u16 = 480;
-
-/// Framebuffer height in pixels.
 pub const FB_HEIGHT: u16 = 800;
-
-/// Total number of pixels in the framebuffer.
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
 const FMC_AF12: AfType = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up);
@@ -82,21 +70,11 @@ fn sdram_pin(pin: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>) {
     core::mem::forget(flex);
 }
 
-/// Owning handle to the initialized SDRAM controller (FMC + IS42S32400F-6BL, 16 MB).
-///
-/// Consumes all FMC pins on construction. Must be initialized before `DisplayCtrl`
-/// (which allocates the framebuffer from SDRAM) and before `TouchCtrl`
-/// (FT6X06 is powered from the display module).
 pub struct SdramCtrl {
     mem: *mut u32,
 }
 
 impl SdramCtrl {
-    /// Initialize the SDRAM controller.
-    ///
-    /// Configures all FMC pins to AF12 and runs the IS42S32400F-6BL initialization
-    /// sequence via `stm32-fmc`. `source_clock_hz` is the FMC input clock frequency
-    /// (typically the AHB clock: 180 MHz at PLL1_P=180MHz, 84 MHz at PLL1_P=84MHz).
     pub fn new(p: &mut embassy_stm32::Peripherals, source_clock_hz: u32) -> Self {
         sdram_pin(unsafe { p.PF0.clone_unchecked() });
         sdram_pin(unsafe { p.PF1.clone_unchecked() });
@@ -160,20 +138,15 @@ impl SdramCtrl {
         };
         let mut sdram: Sdram<EmbassyFmc, Is42s32400f6> =
             Sdram::new_unchecked(fmc, SdramTargetBank::Bank1, Is42s32400f6 {});
-        let mut delay = embassy_time::Delay;
+        let mut delay = BusyDelay;
         let mem = sdram.init(&mut delay);
         SdramCtrl { mem }
     }
 
-    /// Returns the base address of the SDRAM as a `usize` (0xC000_0000).
     pub fn base_address(&self) -> usize {
         self.mem as usize
     }
 
-    /// Returns a `&'static mut [T]` subslice of the SDRAM starting at `offset_bytes`.
-    ///
-    /// Panics if the requested region exceeds `SDRAM_SIZE_BYTES`.
-    /// Used by `DisplayCtrl::new` to allocate the framebuffer.
     pub fn subslice_mut<T>(&self, offset_bytes: usize, len: usize) -> &'static mut [T] {
         let start = (self.mem as usize) + offset_bytes;
         let end = start + len * core::mem::size_of::<T>();
@@ -181,11 +154,7 @@ impl SdramCtrl {
         unsafe { &mut *core::ptr::slice_from_raw_parts_mut(start as *mut T, len) }
     }
 
-    /// Quick destructive SDRAM integrity test.
-    ///
-    /// Writes `0xDEADBEEF` to the first 1024 u32 words, verifies readback, then zeros them.
-    /// Returns `true` on success.
-    #[must_use = "SDRAM test result should be checked"]
+    #[must_use]
     pub fn test_quick(&self) -> bool {
         let words = unsafe { core::slice::from_raw_parts_mut(self.mem as *mut u32, 1024) };
         for word in words.iter_mut() {
@@ -236,7 +205,6 @@ unsafe fn reg32_modify(base: usize, offset: usize, f: impl FnOnce(u32) -> u32) {
 // ── DSI PHY init ──────────────────────────────────────────────────────
 
 unsafe fn dsi_init() {
-    // DSIHOST register offsets from stm32-metapac-21.0.0 Dsihost v1
     const CR: usize = 0x04;
     const CCR: usize = 0x08;
     const LVCIDR: usize = 0x0C;
@@ -244,10 +212,6 @@ unsafe fn dsi_init() {
     const LPCR: usize = 0x14;
     const LPMCR: usize = 0x18;
     const PCR: usize = 0x2C;
-    #[allow(dead_code)]
-    const GVCIDR: usize = 0x30;
-    #[allow(dead_code)]
-    const MCR: usize = 0x34;
     const VMCR: usize = 0x38;
     const VPCR: usize = 0x3C;
     const VCCR: usize = 0x40;
@@ -259,16 +223,6 @@ unsafe fn dsi_init() {
     const VVBPCR: usize = 0x58;
     const VVFPCR: usize = 0x5C;
     const VVACR: usize = 0x60;
-    #[allow(dead_code)]
-    const LCCR: usize = 0x64;
-    #[allow(dead_code)]
-    const CMCR: usize = 0x68;
-    #[allow(dead_code)]
-    const GHCR: usize = 0x6C;
-    #[allow(dead_code)]
-    const GPDR: usize = 0x70;
-    #[allow(dead_code)]
-    const GPSR: usize = 0x74;
     const CLCR: usize = 0x94;
     const CLTCR: usize = 0x98;
     const DLTCR: usize = 0x9C;
@@ -282,16 +236,15 @@ unsafe fn dsi_init() {
     const WCR: usize = 0x404;
     const WPCR0: usize = 0x418;
 
-    // Timing from sync BSP (NT35510_DISPLAY_CONFIG)
     let h_sync = 2u32;
     let h_back_porch = 34u32;
     let h_front_porch = 34u32;
     let v_sync = 1u32;
     let v_back_porch = 15u32;
     let v_front_porch = 16u32;
-    let active_width = FB_WIDTH as u32; // 480
-    let active_height = FB_HEIGHT as u32; // 800
-    let lane_byte_clk = 500_000_000u32; // 500MHz (VCO/ODF=500/1)
+    let active_width = FB_WIDTH as u32;
+    let active_height = FB_HEIGHT as u32;
+    let lane_byte_clk = 500_000_000u32;
 
     // Shutdown
     reg32_clear(DSI_BASE, CR, 1 << 2); // CMDM=0
@@ -304,9 +257,6 @@ unsafe fn dsi_init() {
     cortex_m::asm::delay(168_000);
 
     // Enable DSIHOST and LTDC peripheral clocks
-    // DSIHOST: APB2, bit 27 (RCC.APB2ENR)
-    // LTDC: APB2, bit 26 (RCC.APB2ENR)
-    // RCC base = 0x4002_3800, APB2ENR offset = 0x44
     unsafe {
         let apb2enr_addr = 0x4002_3844usize;
         let apb2enr = core::ptr::read_volatile(apb2enr_addr as *const u32);
@@ -314,7 +264,7 @@ unsafe fn dsi_init() {
     }
     cortex_m::asm::delay(168_000);
 
-    // Regulator enable (bit 24)
+    // Regulator
     reg32_set(DSI_BASE, WRPCR, 1 << 24); // REGEN=1
     let mut timeout = 100_000u32;
     while reg32(DSI_BASE, WISR) & (1 << 12) == 0 && timeout > 0 {
@@ -322,17 +272,16 @@ unsafe fn dsi_init() {
     }
     assert!(timeout > 0, "DSI regulator timeout");
 
-    // PLL: VCO = (8MHz / IDF=2) * NDIV=125 = 500MHz, LaneByteClk = 500MHz/ODF1 = 500MHz
-    // NDIV[8:2], IDF[14:11], ODF[17:16]
+    // PLL: VCO = (8MHz / IDF=2) * NDIV=125 = 500MHz
     reg32_modify(DSI_BASE, WRPCR, |w| {
         (w & !(0x7F << 2 | 0x0F << 11 | 0x03 << 16))
         | (125 << 2)    // NDIV=125
-        | (0x02 << 11)  // IDF=2 (div2)
-        | (0x00 << 16) // ODF=0 (div1)
+        | (0x02 << 11)  // IDF=2
+        | (0x00 << 16) // ODF=0
     });
     reg32_set(DSI_BASE, WRPCR, 1 << 0); // PLLEN=1
 
-    cortex_m::asm::delay(168_000 / 2); // 400us delay before checking lock
+    cortex_m::asm::delay(168_000 / 2);
 
     timeout = 100_000u32;
     while reg32(DSI_BASE, WISR) & (1 << 8) == 0 && timeout > 0 {
@@ -342,41 +291,35 @@ unsafe fn dsi_init() {
 
     // PHY params
     reg32_set(DSI_BASE, PCTLR, 1 << 0 | 1 << 1); // CKE=1, DEN=1
-    reg32_modify(DSI_BASE, CLCR, |w| w | (1 << 0)); // DPCC=1, ACR=0
+    reg32_modify(DSI_BASE, CLCR, |w| w | (1 << 0)); // DPCC=1
     reg32_modify(DSI_BASE, PCONFR, |w| (w & !0x03) | 0x01); // NL=1 (2 data lanes)
     reg32_write(DSI_BASE, CCR, 4); // TXECKDIV=4
-    reg32_write(DSI_BASE, WPCR0, 8); // UIX4=8
+    reg32_write(DSI_BASE, WPCR0, 13); // UIX4=13 (4GHz / f_phy_bit=312.5MHz)
     reg32_write(DSI_BASE, IER0, 0);
     reg32_write(DSI_BASE, IER1, 0);
     reg32_set(DSI_BASE, PCR, 1 << 2); // BTAE=1
 
-    // Video mode: burst (matching sync BSP exactly)
+    // Video mode: burst
     reg32_clear(DSI_BASE, CR, 1 << 2); // CMDM=0
-    reg32_clear(DSI_BASE, WCFGR, 1 << 0); // DSIM=0 (video mode, NOT command mode)
-    reg32_write(DSI_BASE, VPCR, active_width); // VPSIZE=480
-    reg32_write(DSI_BASE, VCCR, 0); // NUMC=0
-    reg32_write(DSI_BASE, VNPCR, 0); // NPSIZE=0
-    reg32_write(DSI_BASE, LVCIDR, 0); // VCID=0
-    reg32_write(DSI_BASE, LPCR, 0); // DEP=0, HSP=0, VSP=0
-    reg32_write(DSI_BASE, LCOLCR, 0x00); // COLC=SixteenBitsConfig1 (RGB565)
-    reg32_modify(DSI_BASE, WCFGR, |w| (w & !(0x07 << 1)) | (0x00 << 1)); // COLMUX=SixteenBitsConfig1
+    reg32_clear(DSI_BASE, WCFGR, 1 << 0); // DSIM=0
+    reg32_write(DSI_BASE, VPCR, active_width);
+    reg32_write(DSI_BASE, VCCR, 1); // NUMC=1
+    reg32_write(DSI_BASE, VNPCR, 0);
+    reg32_write(DSI_BASE, LVCIDR, 0);
+    reg32_write(DSI_BASE, LPCR, 0);
+    reg32_write(DSI_BASE, LCOLCR, 0x00);
+    reg32_modify(DSI_BASE, WCFGR, |w| (w & !(0x07 << 1)) | (0x00 << 1));
 
-    // VMCR: correct bit positions per stm32f4 PAC (VMCR.rs)
-    // Bits 8-15: LP transition enables + LPCE
-    // Sync BSP: LPVSAE(8), LPVBPE(9), LPVFPE(10), LPVAE(11), LPHBPE(12), LPHFPE(13), LPCE(15)
-    // VMT=2 (burst) set separately below
+    // VMCR: LP transition enables + LPCE, VMT=2 (burst)
     reg32_write(
         DSI_BASE,
         VMCR,
         (0x02) | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 15),
     );
 
-    // DSI timing (matching sync BSP calculation exactly)
-    // Sync HAL: hsa = h_sync * f_pix_khz / f_ltdc_khz
-    // where f_pix_khz = lane_byte_clk / 1000 / 8 = 62500 kHz
-    // and f_ltdc_khz = 27429 kHz
-    let f_pix_khz: u32 = lane_byte_clk / 1_000 / 8; // 62,500 kHz
-    let f_ltdc_khz: u32 = 27_429; // ~27.4 MHz LTDC pixel clock
+    // DSI timing
+    let f_pix_khz: u32 = lane_byte_clk / 1_000 / 8;
+    let f_ltdc_khz: u32 = 27_429;
 
     let dsi_hsa = ((h_sync as u32) * f_pix_khz / f_ltdc_khz) as u32;
     let dsi_hbp = ((h_back_porch as u32) * f_pix_khz / f_ltdc_khz) as u32;
@@ -389,27 +332,43 @@ unsafe fn dsi_init() {
     reg32_write(DSI_BASE, VVSACR, v_sync);
     reg32_write(DSI_BASE, VVBPCR, v_back_porch);
     reg32_write(DSI_BASE, VVFPCR, v_front_porch);
-    reg32_write(DSI_BASE, VVACR, active_height); // VA=800
+    reg32_write(DSI_BASE, VVACR, active_height);
 
-    reg32_write(DSI_BASE, LPMCR, (64 << 0) | (64 << 8)); // LPSIZE=64, VLPSIZE=64
+    reg32_write(DSI_BASE, LPMCR, (64 << 0) | (64 << 8));
 
-    // HS/LP transition timers
-    reg32_write(DSI_BASE, CLTCR, (35 << 0) | (35 << 16)); // HS2LP_TIME, LP2HS_TIME
-                                                          // DLTCR: [26:16]=MRD_TIME, [15:8]=LP2HS_TIME, [7:0]=HS2LP_TIME
-    reg32_write(DSI_BASE, DLTCR, (35 << 0) | (35 << 8) | (0 << 16)); // HS2LP=35, LP2HS=35, MRD=0
-    reg32_modify(DSI_BASE, PCONFR, |w| (w & !(0x1F << 16)) | (10 << 16)); // SW_TIME=10
+    reg32_write(DSI_BASE, CLTCR, (35 << 0) | (35 << 16));
+    reg32_write(DSI_BASE, DLTCR, (35 << 0) | (35 << 8) | (0 << 16));
+    reg32_modify(DSI_BASE, PCONFR, |w| (w & !(0x1F << 16)) | (10 << 16));
 
     cortex_m::asm::delay(168_000 * 10);
 
     // Enable DSI host and wrapper
     reg32_set(DSI_BASE, CR, 1 << 0); // EN=1
-                                     // WCFGR DSIM stays 0 (video mode) — do NOT set to 1
-    reg32_set(DSI_BASE, WCR, 1 << 0); // DSIEN=1 (enable DSI wrapper)
+    reg32_set(DSI_BASE, WCR, 1 << 3); // DSIEN=1 (bit 3, NOT bit 0)
 }
 
 // ── LTDC init ─────────────────────────────────────────────────────────
 
-unsafe fn ltdc_init(fb_addr: u32) {
+unsafe fn ltdc_init() {
+    let dckcfgr = 0x4002_388Cusize;
+    let dck_val = core::ptr::read_volatile(dckcfgr as *const u32);
+    core::ptr::write_volatile(
+        dckcfgr as *mut u32,
+        (dck_val & !(0x03 << 16)) | (0b00 << 16),
+    );
+
+    const APB2RSTR: usize = 0x4002_3A24;
+    const AHB1RSTR: usize = 0x4002_3808;
+    let apb2rstr = APB2RSTR as *mut u32;
+    let ahb1rstr = AHB1RSTR as *mut u32;
+    let apb2_val = core::ptr::read_volatile(apb2rstr);
+    let ahb1_val = core::ptr::read_volatile(ahb1rstr);
+    core::ptr::write_volatile(apb2rstr, apb2_val | (1 << 26));
+    core::ptr::write_volatile(ahb1rstr, ahb1_val | (1 << 23));
+    cortex_m::asm::delay(168);
+    core::ptr::write_volatile(apb2rstr, apb2_val & !(1 << 26));
+    core::ptr::write_volatile(ahb1rstr, ahb1_val & !(1 << 23));
+
     const GCR: usize = 0x18;
     const SSCR: usize = 0x08;
     const BPCR: usize = 0x0C;
@@ -418,18 +377,7 @@ unsafe fn ltdc_init(fb_addr: u32) {
     const BCCR: usize = 0x2C;
     const IER: usize = 0x34;
     const SRCR: usize = 0x24;
-    // Layer 1 registers (base at 0x84, each field relative to layer base)
-    const L1_BASE: usize = 0x84;
-    const L1CR: usize = L1_BASE + 0x00;
-    const L1WHPCR: usize = L1_BASE + 0x04;
-    const L1WVPCR: usize = L1_BASE + 0x08;
-    const L1PFCR: usize = L1_BASE + 0x10;
-    const L1CACR: usize = L1_BASE + 0x14;
-    const L1CFBAR: usize = L1_BASE + 0x28;
-    const L1CFBLR: usize = L1_BASE + 0x2C;
-    const L1CFBLNR: usize = L1_BASE + 0x30;
 
-    // Timing matching sync BSP (NT35510_DISPLAY_CONFIG)
     let h_sync = 2u32;
     let h_back_porch = 34u32;
     let h_front_porch = 34u32;
@@ -437,35 +385,24 @@ unsafe fn ltdc_init(fb_addr: u32) {
     let v_back_porch = 15u32;
     let v_front_porch = 16u32;
 
-    // Global config
-    reg32_write(
-        LTDC_BASE,
-        GCR,
-        (1 << 31) | // HSPOL=ACTIVEHIGH
-        (1 << 30) | // VSPOL=ACTIVEHIGH
-        (1 << 28), // PCPOL=RISINGEDGE
-                   // DEPOL=0 (ACTIVELOW), LTDCEN=0, DEN=0
-    );
+    reg32_write(LTDC_BASE, GCR, (1 << 31) | (1 << 30) | (1 << 28));
 
     reg32_write(
         LTDC_BASE,
         SSCR,
         ((h_sync - 1) & 0xFFF) | (((v_sync - 1) & 0xFFF) << 16),
     );
-
     reg32_write(
         LTDC_BASE,
         BPCR,
         ((h_sync + h_back_porch - 1) & 0xFFF) | (((v_sync + v_back_porch - 1) & 0xFFF) << 16),
     );
-
     reg32_write(
         LTDC_BASE,
         AWCR,
         ((FB_WIDTH as u32 + h_sync + h_back_porch - 1) & 0xFFF)
             | (((v_sync + v_back_porch + FB_HEIGHT as u32 - 1) & 0xFFF) << 16),
     );
-
     reg32_write(
         LTDC_BASE,
         TWCR,
@@ -473,40 +410,56 @@ unsafe fn ltdc_init(fb_addr: u32) {
             | (((v_sync + v_back_porch + FB_HEIGHT as u32 + v_front_porch - 1) & 0xFFF) << 16),
     );
 
-    reg32_write(LTDC_BASE, BCCR, 0); // Black background
-    reg32_write(LTDC_BASE, IER, (1 << 2) | (1 << 1)); // TERRIE, FUIE
+    reg32_write(LTDC_BASE, BCCR, 0);
+    reg32_write(LTDC_BASE, IER, (1 << 2) | (1 << 1));
 
-    // Layer 1 window
+    reg32_write(LTDC_BASE, SRCR, 0x01);
+    while reg32(LTDC_BASE, SRCR) & 0x01 != 0 {}
+
+    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, DEN=1
+    reg32_write(LTDC_BASE, SRCR, 0x01);
+}
+
+unsafe fn ltdc_config_layer(fb_addr: u32) {
+    const L1_BASE: usize = 0x84;
+    const SRCR: usize = 0x24;
+
+    let h_sync = 2u32;
+    let h_back_porch = 34u32;
+    let v_sync = 1u32;
+    let v_back_porch = 15u32;
+
     let ahbp = h_sync + h_back_porch - 1;
     let avbp = v_sync + v_back_porch - 1;
-    let bytes_per_pixel: u32 = 2; // RGB565
-    let line_length = FB_WIDTH as u32 * bytes_per_pixel;
+    let line_length = FB_WIDTH as u32 * 2; // RGB565
 
     reg32_write(
         LTDC_BASE,
-        L1WHPCR,
+        L1_BASE + 0x04,
         ((ahbp + 1) & 0xFFF) | (((ahbp + FB_WIDTH as u32) & 0xFFF) << 16),
     );
     reg32_write(
         LTDC_BASE,
-        L1WVPCR,
+        L1_BASE + 0x08,
         ((avbp + 1) & 0xFFF) | (((avbp + FB_HEIGHT as u32) & 0xFFF) << 16),
     );
-    reg32_write(LTDC_BASE, L1PFCR, 0x02); // RGB565
-    reg32_write(LTDC_BASE, L1CACR, 255); // CONSTA=255
-    reg32_write(LTDC_BASE, L1CFBAR, fb_addr);
-    reg32_write(LTDC_BASE, L1CFBLR, (line_length + 3) | (line_length << 16));
-    reg32_write(LTDC_BASE, L1CFBLNR, FB_HEIGHT as u32);
-    reg32_write(LTDC_BASE, L1CR, 1 << 0); // LEN=1 (enable layer)
+    reg32_write(LTDC_BASE, L1_BASE + 0x10, 0x02); // RGB565
+    reg32_write(LTDC_BASE, L1_BASE + 0x14, 255); // CONSTA=255
+    reg32_write(LTDC_BASE, L1_BASE + 0x18, 0xFFFF0000); // L1DCCR: opaque red
+    reg32_write(LTDC_BASE, L1_BASE + 0x1C, 0x0407); // L1BFCR: BF1=constant(4), BF2=constant(7)
+    reg32_write(LTDC_BASE, L1_BASE + 0x28, fb_addr);
+    reg32_write(
+        LTDC_BASE,
+        L1_BASE + 0x2C,
+        (line_length + 3) | (line_length << 16),
+    );
+    reg32_write(LTDC_BASE, L1_BASE + 0x30, FB_HEIGHT as u32);
+    reg32_write(LTDC_BASE, L1_BASE + 0x00, 1 << 0); // LEN=1
 
-    // Reload and enable
-    reg32_write(LTDC_BASE, SRCR, 0x01); // IMR=reload
-    while reg32(LTDC_BASE, SRCR) & 0x01 != 0 {}
-
-    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, DEN=1
+    reg32_write(LTDC_BASE, SRCR, 0x01);
 }
 
-// ── DsiHostCtrlIo adapter (raw FIFO writes/reads) ──────────────────
+// ── DsiHostCtrlIo adapter (GHCR protocol) ─────────────────────────────
 
 struct RawDsi;
 
@@ -514,15 +467,11 @@ impl RawDsi {
     const GHCR: usize = 0x6C;
     const GPDR: usize = 0x70;
     const GPSR: usize = 0x74;
-    const GPDLR: usize = 0x4C8;
-
-    const CMDFE_BIT: u32 = 1 << 0;
-    const PRDFE_BIT: u32 = 1 << 4;
-    const RCB_BIT: u32 = 1 << 6;
+    const ISR1: usize = 0xC4;
 
     unsafe fn wait_cmd_fifo_empty(&self) -> Result<(), ()> {
         for _ in 0..100_000 {
-            if reg32(DSI_BASE, Self::GPSR) & Self::CMDFE_BIT != 0 {
+            if reg32(DSI_BASE, Self::GPSR) & (1 << 0) != 0 {
                 return Ok(());
             }
         }
@@ -531,7 +480,7 @@ impl RawDsi {
 
     unsafe fn wait_read_not_busy(&self) -> Result<(), ()> {
         for _ in 0..100_000 {
-            if reg32(DSI_BASE, Self::GPSR) & Self::RCB_BIT == 0 {
+            if reg32(DSI_BASE, Self::GPSR) & (1 << 6) == 0 {
                 return Ok(());
             }
         }
@@ -540,11 +489,20 @@ impl RawDsi {
 
     unsafe fn wait_payload_fifo_not_empty(&self) -> Result<(), ()> {
         for _ in 0..100_000 {
-            if reg32(DSI_BASE, Self::GPSR) & Self::PRDFE_BIT == 0 {
+            if reg32(DSI_BASE, Self::GPSR) & (1 << 4) == 0 {
                 return Ok(());
             }
         }
         Err(())
+    }
+
+    unsafe fn ghcr_write(&mut self, wcmsb: u8, wclsb: u8, dt: u8) {
+        let _ = self.wait_cmd_fifo_empty();
+        reg32_write(
+            DSI_BASE,
+            Self::GHCR,
+            ((wcmsb as u32) << 16) | ((wclsb as u32) << 8) | (dt as u32),
+        );
     }
 }
 
@@ -553,122 +511,144 @@ impl DsiHostCtrlIo for RawDsi {
 
     fn write(&mut self, cmd: DsiWriteCommand) -> Result<(), Self::Error> {
         match cmd {
+            DsiWriteCommand::DcsShortP0 { arg } => unsafe {
+                self.ghcr_write(0, arg, 0x05);
+                Ok(())
+            },
             DsiWriteCommand::DcsShortP1 { arg, data } => unsafe {
-                self.wait_cmd_fifo_empty()?;
-                reg32_write(
-                    DSI_BASE,
-                    Self::GPDR,
-                    0x15 | ((arg as u32) << 8) | ((data as u32) << 16),
-                );
-                self.wait_cmd_fifo_empty()?;
+                self.ghcr_write(data, arg, 0x15);
+                Ok(())
             },
             DsiWriteCommand::DcsLongWrite { arg, data } => unsafe {
                 self.wait_cmd_fifo_empty()?;
 
-                reg32_write(DSI_BASE, Self::GPDR, 0x39 | ((arg as u32) << 8));
+                let mut fifoword = arg as u32;
+                for (i, byte) in data.iter().take(3).enumerate() {
+                    fifoword |= (*byte as u32) << (8 + 8 * i);
+                }
+                reg32_write(DSI_BASE, Self::GPDR, fifoword);
 
-                let mut i = 0;
-                while i < data.len() {
-                    let b0 = data[i];
-                    let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
-                    reg32_write(DSI_BASE, Self::GPDLR, ((b1 as u32) << 8) | (b0 as u32));
-                    i += 2;
+                if data.len() > 3 {
+                    let mut i = 3;
+                    while i + 4 <= data.len() {
+                        let w: [u8; 4] = data[i..i + 4].try_into().unwrap();
+                        reg32_write(DSI_BASE, Self::GPDR, u32::from_ne_bytes(w));
+                        i += 4;
+                    }
+                    let mut fw = 0u32;
+                    let mut j = 0;
+                    while i < data.len() {
+                        fw |= (data[i] as u32) << (j * 8);
+                        i += 1;
+                        j += 1;
+                    }
+                    if j > 0 {
+                        reg32_write(DSI_BASE, Self::GPDR, fw);
+                    }
                 }
-                if data.len() % 2 != 0 {
-                    reg32_write(DSI_BASE, Self::GPDLR, 0);
-                }
+
+                let len = (data.len() + 1) as u16;
+                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x39);
 
                 self.wait_cmd_fifo_empty()?;
+                Ok(())
             },
-            _ => {}
+            DsiWriteCommand::SetMaximumReturnPacketSize(len) => unsafe {
+                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x37);
+                Ok(())
+            },
+            DsiWriteCommand::GenericShortP0 => unsafe {
+                self.ghcr_write(0, 0, 0x03);
+                Ok(())
+            },
+            DsiWriteCommand::GenericShortP1 => unsafe {
+                self.ghcr_write(0, 0, 0x13);
+                Ok(())
+            },
+            DsiWriteCommand::GenericShortP2 => unsafe {
+                self.ghcr_write(0, 0, 0x23);
+                Ok(())
+            },
+            DsiWriteCommand::GenericLongWrite { arg, data } => unsafe {
+                self.wait_cmd_fifo_empty()?;
+
+                let mut fifoword = arg as u32;
+                for (i, byte) in data.iter().take(3).enumerate() {
+                    fifoword |= (*byte as u32) << (8 + 8 * i);
+                }
+                reg32_write(DSI_BASE, Self::GPDR, fifoword);
+
+                if data.len() > 3 {
+                    let mut i = 3;
+                    while i + 4 <= data.len() {
+                        let w: [u8; 4] = data[i..i + 4].try_into().unwrap();
+                        reg32_write(DSI_BASE, Self::GPDR, u32::from_ne_bytes(w));
+                        i += 4;
+                    }
+                    let mut fw = 0u32;
+                    let mut j = 0;
+                    while i < data.len() {
+                        fw |= (data[i] as u32) << (j * 8);
+                        i += 1;
+                        j += 1;
+                    }
+                    if j > 0 {
+                        reg32_write(DSI_BASE, Self::GPDR, fw);
+                    }
+                }
+
+                let len = (data.len() + 1) as u16;
+                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x29);
+
+                self.wait_cmd_fifo_empty()?;
+                Ok(())
+            },
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     fn read(&mut self, cmd: DsiReadCommand, buf: &mut [u8]) -> Result<(), Self::Error> {
+        if buf.len() > 2 && buf.len() <= 65_535 {
+            self.write(DsiWriteCommand::SetMaximumReturnPacketSize(buf.len() as u16))?;
+        }
         match cmd {
             DsiReadCommand::DcsShort { arg } => unsafe {
-                self.wait_cmd_fifo_empty()?;
-
-                reg32_write(
-                    DSI_BASE,
-                    Self::GPDR,
-                    0x37 | (((buf.len() >> 8) & 0xFF) as u32) << 16
-                        | ((buf.len() & 0xFF) as u32) << 24,
-                );
-
-                self.wait_cmd_fifo_empty()?;
-
-                reg32_write(DSI_BASE, Self::GHCR, 0x06 | ((arg as u32) << 8));
-
+                self.ghcr_write(0, arg, 0x06);
                 self.wait_read_not_busy()?;
-
-                for bytes in buf.chunks_exact_mut(4) {
+                let mut idx = 0;
+                let mut left = buf.len();
+                while left > 0 {
                     self.wait_payload_fifo_not_empty()?;
                     let val = reg32(DSI_BASE, Self::GPDR);
-                    bytes[0] = (val & 0xFF) as u8;
-                    bytes[1] = ((val >> 8) & 0xFF) as u8;
-                    bytes[2] = ((val >> 16) & 0xFF) as u8;
-                    bytes[3] = ((val >> 24) & 0xFF) as u8;
-                }
-
-                let remainder = buf.chunks_exact_mut(4).into_remainder();
-                if !remainder.is_empty() {
-                    self.wait_payload_fifo_not_empty()?;
-                    let val = reg32(DSI_BASE, Self::GPDR);
-                    for (i, byte) in remainder.iter_mut().enumerate() {
+                    let chunk = core::cmp::min(left, 4);
+                    for (i, byte) in buf[idx..idx + chunk].iter_mut().enumerate() {
                         *byte = ((val >> (i * 8)) & 0xFF) as u8;
                     }
+                    idx += chunk;
+                    left -= chunk;
                 }
+                Ok(())
             },
-            _ => {}
+            _ => Ok(()),
         }
-        Ok(())
     }
 }
 
 // ── Display panel detection ──────────────────────────────────────────
 
-/// LCD panel controller chip identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LcdController {
-    /// NT35510 — the panel shipped on the STM32F469I-Discovery board.
     Nt35510,
-    /// OTM8009A — alternative panel (not on this board, but supported by the BSP).
     Otm8009a,
 }
 
-/// Hint for panel auto-detection in [`DisplayCtrl::new`].
-///
-/// The STM32F469I-Discovery board exists in two revisions:
-/// - **B07** (early production): OTM8009A panel
-/// - **B08+** (later production): NT35510 panel
-///
-/// There is no GPIO strapping or other hardware mechanism to differentiate them.
-/// Panel detection uses a DSI read of register 0xDA (NT35510 returns 0x80,
-/// OTM8009A returns 0x40). Use `ForceNt35510` or `ForceOtm8009a` if probing fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardHint {
-    /// Probe the panel via DSI reads up to 3 retries, fall back to NT35510.
-    ///
-    /// **Note:** Early B07 boards shipped with an OTM8009A panel. Auto-detection reads
-    /// register 0xDA — NT35510 returns 0x80, OTM8009A returns 0x40. If you have a B07
-    /// board and auto-detection fails, use `ForceOtm8009a`.
     Auto,
-    /// Assume NT35510 panel, skip DSI probe. Recommended for normal use.
     ForceNt35510,
-    /// Assume OTM8009A panel, skip DSI probe.
     ForceOtm8009a,
 }
 
-const PROBE_RETRIES: u32 = 3;
-
-/// Detect which LCD controller is present.
-///
-/// Probes via DSI short read up to `PROBE_RETRIES` times. Falls back to `Nt35510`
-/// if probe is inconclusive. With `Auto` hint, DSI reads may fail — this is a known
-/// hardware limitation (see AGENTS.md "DSI Probe Reads Fail").
-#[must_use = "detected panel should be used to select initialization"]
 pub fn detect_panel(hint: BoardHint) -> LcdController {
     if hint == BoardHint::ForceNt35510 {
         return LcdController::Nt35510;
@@ -679,11 +659,11 @@ pub fn detect_panel(hint: BoardHint) -> LcdController {
 
     let mut panel = Nt35510::new();
     let mut dsi_adapter = RawDsi;
-    let mut delay = embassy_time::Delay;
+    let mut delay = BusyDelay;
     let mut mismatch_count = 0u32;
     let mut first_mismatch_id: u8 = 0;
 
-    for _ in 0..PROBE_RETRIES {
+    for _ in 0..3 {
         match panel.probe(&mut dsi_adapter, &mut delay) {
             Ok(()) => return LcdController::Nt35510,
             Err(nt35510::Error::ProbeMismatch(id)) => {
@@ -694,108 +674,121 @@ pub fn detect_panel(hint: BoardHint) -> LcdController {
             }
             Err(_) => {}
         }
-        embassy_time::Delay.delay_ms(5);
+        BusyDelay.delay_ms(5);
     }
 
+    #[cfg(feature = "display")]
     if mismatch_count >= 2 && first_mismatch_id != 0 {
-        cortex_m::asm::nop();
-        #[cfg(feature = "display")]
-        {
-            let mut otm = Otm8009A::new();
-            if otm.id_matches(&mut dsi_adapter).unwrap_or(false) {
-                return LcdController::Otm8009a;
-            }
+        let mut otm = Otm8009A::new();
+        if otm.id_matches(&mut dsi_adapter).unwrap_or(false) {
+            return LcdController::Otm8009a;
         }
     }
 
-    cortex_m::asm::nop();
     LcdController::Nt35510
 }
 
 // ── DSI command mode helpers ───────────────────────────────────────────
 
 unsafe fn dsi_set_lp_command_mode() {
-    const CMCR: usize = DSI_BASE + 0x68;
-    const WPCR1: usize = DSI_BASE + 0x41C;
-    reg32_set(DSI_BASE, WPCR1, 1 << 22); // force_rx_low_power(true): FLPRXLPM
-    reg32_set(DSI_BASE, CMCR, (0x7FF << 7) | (1 << 24)); // AllInLowPower
+    reg32_set(DSI_BASE, 0x41C, 1 << 22); // WPCR1: force_rx_low_power(true)
+    reg32_set(
+        DSI_BASE,
+        0x68,
+        (0x7FF << 7)
+            | (1 << 18)
+            | (1 << 19)
+            | (1 << 20)
+            | (1 << 22)
+            | (1 << 23)
+            | (1 << 24)
+            | (1 << 25)
+            | (1 << 26),
+    );
 }
 
 unsafe fn dsi_set_hs_command_mode() {
-    const CMCR: usize = DSI_BASE + 0x68;
-    const WPCR1: usize = DSI_BASE + 0x41C;
-    reg32_clear(DSI_BASE, WPCR1, 1 << 22); // force_rx_low_power(false)
-    reg32_clear(DSI_BASE, CMCR, (0x7FF << 7) | (1 << 24) | (1 << 0)); // AllInHighSpeed
+    reg32_clear(DSI_BASE, 0x41C, 1 << 22); // WPCR1: force_rx_low_power(false)
+    reg32_clear(
+        DSI_BASE,
+        0x68,
+        (0x7FF << 7)
+            | (1 << 18)
+            | (1 << 19)
+            | (1 << 20)
+            | (1 << 22)
+            | (1 << 23)
+            | (1 << 24)
+            | (1 << 25)
+            | (1 << 26)
+            | (1 << 0), // also clear ARE
+    );
 }
 
 // ── Display init (orchestrator) ────────────────────────────────────────
 
-/// Owning handle to the display subsystem (DSI + LTDC + panel controller).
-///
-/// Holds the framebuffer in SDRAM. Construct with [`DisplayCtrl::new`] after initializing
-/// [`SdramCtrl`]. Use [`fb()`](DisplayCtrl::fb) to obtain a [`FramebufferView`] for rendering.
-///
-/// Supports both NT35510 (B08+ boards) and OTM8009A (B07 boards) panels.
 pub struct DisplayCtrl {
     framebuffer: &'static mut [u16],
 }
 
 impl DisplayCtrl {
-    /// Full display initialization pipeline.
-    ///
-    /// Performs LCD reset pulse (20 ms low + 140 ms high), DSI PHY init (500 MHz PLL),
-    /// panel auto-detection, LTDC layer 1 configuration (RGB565, 480×800), and panel-
-    /// specific initialization (NT35510 or OTM8009A). Allocates the framebuffer as the
-    /// first `FB_SIZE` u16 values in SDRAM.
-    ///
-    /// Panel detection happens after DSI init so the bus is alive for probing. With
-    /// `BoardHint::Auto`, detection retries up to 3 times and falls back to NT35510.
-    /// Use `BoardHint::ForceNt35510` or `BoardHint::ForceOtm8009a` to skip probing.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the detected panel's init sequence fails.
     pub fn new(
         sdram: &SdramCtrl,
         lcd_reset: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
     ) -> Self {
-        // LCD reset
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: enter");
+
         let mut reset_pin = embassy_stm32::gpio::Output::new(
             lcd_reset,
             embassy_stm32::gpio::Level::Low,
             embassy_stm32::gpio::Speed::Low,
         );
-        embassy_time::Delay.delay_ms(20);
+        BusyDelay.delay_ms(20);
         reset_pin.set_high();
-        embassy_time::Delay.delay_ms(140);
+        BusyDelay.delay_ms(140);
         core::mem::forget(reset_pin);
 
-        // DSI PHY init
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: LCD reset done");
+
         unsafe {
             dsi_init();
         }
 
-        // LTDC init
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: dsi_init done");
+
         let fb_slice: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
         let fb_addr = fb_slice.as_mut_ptr() as u32;
-        // LTDC init
         unsafe {
-            ltdc_init(fb_addr);
+            ltdc_init();
         }
 
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: ltdc_init done");
+
         let controller = detect_panel(hint);
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: detect_panel done");
 
         unsafe {
             dsi_set_lp_command_mode();
         }
 
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: LP mode set");
+
         match controller {
             LcdController::Nt35510 => {
-                embassy_time::Delay.delay_ms(120);
+                BusyDelay.delay_ms(120);
+                #[cfg(feature = "defmt")]
+                defmt::info!("DC::new: starting NT35510 init");
                 let mut panel = Nt35510::new();
                 let mut dsi_adapter = RawDsi;
-                let mut delay = embassy_time::Delay;
+                let mut delay = BusyDelay;
                 panel
                     .init_rgb565(
                         &mut dsi_adapter,
@@ -804,12 +797,14 @@ impl DisplayCtrl {
                         nt35510::ColorMap::Rgb,
                     )
                     .expect("NT35510 init failed");
+                #[cfg(feature = "defmt")]
+                defmt::info!("DC::new: init_rgb565 done");
             }
             #[cfg(feature = "display")]
             LcdController::Otm8009a => {
                 use otm8009a::{ColorMap, FrameRate, Mode, Otm8009AConfig};
 
-                embassy_time::Delay.delay_ms(120);
+                BusyDelay.delay_ms(120);
                 let mut panel = Otm8009A::new();
                 let mut dsi_adapter = RawDsi;
                 let mut delay = DelayMsAdapter;
@@ -828,15 +823,19 @@ impl DisplayCtrl {
 
         unsafe {
             dsi_set_hs_command_mode();
+            reg32_set(DSI_BASE, 0x404, 1 << 2); // WCR.LTDCEN=1
+            ltdc_config_layer(fb_addr);
         }
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: all done");
 
         DisplayCtrl {
             framebuffer: fb_slice,
         }
     }
 
-    /// Returns a [`FramebufferView`] for rendering via `embedded-graphics`.
-    #[must_use = "framebuffer view should be used for rendering"]
+    #[must_use]
     pub fn fb(&mut self) -> FramebufferView<'_> {
         FramebufferView {
             buffer: self.framebuffer,
@@ -845,17 +844,11 @@ impl DisplayCtrl {
 }
 
 /// Borrowed view into the raw RGB565 framebuffer.
-///
-/// Implements [`DrawTarget`] (clipped pixel writes) and [`OriginDimensions`] (480×800).
-/// Use [`clear()`](FramebufferView::clear) for fast full-screen fills.
 pub struct FramebufferView<'a> {
     buffer: &'a mut [u16],
 }
 
 impl<'a> FramebufferView<'a> {
-    /// Fast fill the entire framebuffer with a single color (memset-style).
-    ///
-    /// Prefer this over `DrawTarget::clear()` for full-screen clears.
     pub fn clear(&mut self, color: Rgb565) {
         let raw = color.into_storage();
         for pixel in self.buffer.iter_mut() {

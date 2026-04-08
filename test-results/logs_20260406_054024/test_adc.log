@@ -1,0 +1,13 @@
+     Finished in 1.73s
+[INFO ] === ADC Test Suite === (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:78)
+[INFO ] TEST adc_temp_read: RUNNING (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:83)
+[INFO ]   ADC temp raw: 1056 (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:91)
+[INFO ] TEST adc_temp_read: PASS (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:17)
+[INFO ] TEST adc_vrefint_read: RUNNING (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:101)
+[INFO ]   ADC vrefint raw: 1507 (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:106)
+[INFO ] TEST adc_vrefint_read: PASS (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:17)
+[INFO ] === ADC Test Summary === (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:123)
+[INFO ] SUMMARY: 2/2 passed (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:124)
+[INFO ] ALL TESTS PASSED (test_adc embassy-stm32f469i-disco/examples/test_adc.rs:126)
+Received SIGTERM, exiting
+Exited by user request

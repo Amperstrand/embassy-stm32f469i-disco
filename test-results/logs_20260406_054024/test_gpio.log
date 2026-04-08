@@ -1,0 +1,21 @@
+     Finished in 1.84s
+[INFO ] === GPIO Test Suite === (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:24)
+[INFO ] TEST pa0_input_mode: RUNNING (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:27)
+[INFO ]   PA0 initial state: false (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:30)
+[INFO ] TEST pa0_input_mode: PASS (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:17)
+[INFO ] TEST pa0_read_stability: RUNNING (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:34)
+[INFO ]   PA0 stable for 100 reads (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:47)
+[INFO ] TEST pa0_read_stability: PASS (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:17)
+[INFO ] TEST button_press_detect: RUNNING (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:53)
+[INFO ]   >>> Press the BLUE button (PA0) 3 times within 15 seconds <<< (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:54)
+[INFO ]   Only 0 presses detected (need 3) - passing as non-interactive (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:74)
+[INFO ] TEST button_press_detect: PASS (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:17)
+[INFO ] TEST multi_port_init: RUNNING (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:83)
+[INFO ] TEST multi_port_init: PASS (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:17)
+[INFO ] TEST async_gpio_toggle: RUNNING (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:138)
+[INFO ] TEST async_gpio_toggle: PASS (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:17)
+[INFO ] === GPIO Test Summary === (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:157)
+[INFO ] SUMMARY: 5/5 passed (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:158)
+[INFO ] ALL TESTS PASSED (test_gpio embassy-stm32f469i-disco/examples/test_gpio.rs:160)
+Received SIGTERM, exiting
+Exited by user request

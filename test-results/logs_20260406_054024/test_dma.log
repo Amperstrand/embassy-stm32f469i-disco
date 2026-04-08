@@ -1,0 +1,18 @@
+     Finished in 1.93s
+[INFO ] === DMA Test Suite === (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:102)
+[INFO ] TEST dma_64b: RUNNING (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:107)
+[INFO ] TEST dma_64b: PASS (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:18)
+[INFO ] TEST dma_4096b: RUNNING (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:120)
+[INFO ] TEST dma_4096b: PASS (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:18)
+[INFO ] TEST dma_1024b: RUNNING (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:133)
+[INFO ] TEST dma_1024b: PASS (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:18)
+[INFO ] TEST dma_repeated: RUNNING (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:146)
+[INFO ] TEST dma_repeated: PASS (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:18)
+[INFO ] TEST dma_timing: RUNNING (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:169)
+[INFO ]   64b M2M: 2us (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:180)
+[INFO ] TEST dma_timing: PASS (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:18)
+[INFO ] === DMA Test Summary === (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:196)
+[INFO ] SUMMARY: 5/5 passed (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:197)
+[INFO ] ALL TESTS PASSED (test_dma embassy-stm32f469i-disco/examples/test_dma.rs:199)
+Received SIGTERM, exiting
+Exited by user request
