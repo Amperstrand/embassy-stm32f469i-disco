@@ -603,7 +603,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Display init
     defmt::info!("Display init...");
-    let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, BoardHint::Auto);
+    let mut display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, unsafe { p.PH7.clone_unchecked() }, BoardHint::Auto);
     defmt::info!("Display init done");
     unsafe { tpass("Display Init") };
 

@@ -98,9 +98,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("SDRAM OK");
 
     defmt::info!("Initializing display...");
+    let stolen = unsafe { embassy_stm32::Peripherals::steal() };
     let mut display = DisplayCtrl::new(
         &sdram,
-        unsafe { embassy_stm32::Peripherals::steal().PH7.clone_unchecked() },
+        unsafe { stolen.LTDC.clone_unchecked() },
+        unsafe { stolen.DSIHOST.clone_unchecked() },
+        unsafe { stolen.PJ2.clone_unchecked() },
+        unsafe { stolen.PH7.clone_unchecked() },
         BoardHint::ForceNt35510,
     );
     defmt::info!("Display OK");

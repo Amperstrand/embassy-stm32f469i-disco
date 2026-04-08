@@ -93,6 +93,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let mut display = DisplayCtrl::new(
         &sdram,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
         unsafe { p.PH7.clone_unchecked() },
         embassy_stm32f469i_disco::BoardHint::Auto,
     );
