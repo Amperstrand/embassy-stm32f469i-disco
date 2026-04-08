@@ -387,27 +387,28 @@ unsafe fn ltdc_init() {
 
     reg32_write(LTDC_BASE, GCR, (1 << 31) | (1 << 30) | (1 << 28));
 
+    // STM32F4 LTDC timing: bits[12:0] = vertical, bits[27:16] = horizontal
     reg32_write(
         LTDC_BASE,
         SSCR,
-        ((h_sync - 1) & 0xFFF) | (((v_sync - 1) & 0xFFF) << 16),
+        ((v_sync - 1) & 0xFFF) | (((h_sync - 1) & 0xFFF) << 16),
     );
     reg32_write(
         LTDC_BASE,
         BPCR,
-        ((h_sync + h_back_porch - 1) & 0xFFF) | (((v_sync + v_back_porch - 1) & 0xFFF) << 16),
+        ((v_sync + v_back_porch - 1) & 0xFFF) | (((h_sync + h_back_porch - 1) & 0xFFF) << 16),
     );
     reg32_write(
         LTDC_BASE,
         AWCR,
-        ((FB_WIDTH as u32 + h_sync + h_back_porch - 1) & 0xFFF)
-            | (((v_sync + v_back_porch + FB_HEIGHT as u32 - 1) & 0xFFF) << 16),
+        ((v_sync + v_back_porch + FB_HEIGHT as u32 - 1) & 0xFFF)
+            | (((FB_WIDTH as u32 + h_sync + h_back_porch - 1) & 0xFFF) << 16),
     );
     reg32_write(
         LTDC_BASE,
         TWCR,
-        ((FB_WIDTH as u32 + h_sync + h_back_porch + h_front_porch - 1) & 0xFFF)
-            | (((v_sync + v_back_porch + FB_HEIGHT as u32 + v_front_porch - 1) & 0xFFF) << 16),
+        ((v_sync + v_back_porch + FB_HEIGHT as u32 + v_front_porch - 1) & 0xFFF)
+            | (((FB_WIDTH as u32 + h_sync + h_back_porch + h_front_porch - 1) & 0xFFF) << 16),
     );
 
     reg32_write(LTDC_BASE, BCCR, 0);
@@ -416,7 +417,10 @@ unsafe fn ltdc_init() {
     reg32_write(LTDC_BASE, SRCR, 0x01);
     while reg32(LTDC_BASE, SRCR) & 0x01 != 0 {}
 
-    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, DEN=1
+    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, bit 1 (reserved)
+    let gcr_after_set = reg32(LTDC_BASE, GCR);
+    #[cfg(feature = "defmt")]
+    defmt::info!("LTDC GCR after set = {:08x}", gcr_after_set);
     reg32_write(LTDC_BASE, SRCR, 0x01);
 }
 
@@ -775,6 +779,9 @@ impl DisplayCtrl {
         defmt::info!("DC::new: detect_panel done");
 
         unsafe {
+            let gcr_before_panel = reg32(LTDC_BASE, 0x18);
+            #[cfg(feature = "defmt")]
+            defmt::info!("DC::new: GCR before panel = {:08x}", gcr_before_panel);
             dsi_set_lp_command_mode();
         }
 
@@ -823,8 +830,17 @@ impl DisplayCtrl {
 
         unsafe {
             dsi_set_hs_command_mode();
+            let gcr_after_panel = reg32(LTDC_BASE, 0x18);
+            #[cfg(feature = "defmt")]
+            defmt::info!("DC::new: GCR after panel = {:08x}", gcr_after_panel);
             reg32_set(DSI_BASE, 0x404, 1 << 2); // WCR.LTDCEN=1
+            let gcr_after_wcr = reg32(LTDC_BASE, 0x18);
+            #[cfg(feature = "defmt")]
+            defmt::info!("DC::new: GCR after WCR.LTDCEN = {:08x}", gcr_after_wcr);
             ltdc_config_layer(fb_addr);
+            let gcr_final = reg32(LTDC_BASE, 0x18);
+            #[cfg(feature = "defmt")]
+            defmt::info!("DC::new: GCR final = {:08x}", gcr_final);
         }
 
         #[cfg(feature = "defmt")]
