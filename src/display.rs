@@ -354,39 +354,44 @@ unsafe fn ltdc_init() {
     // VCO = (HSE / PLLM) * PLLSAI_N = (8 / 8) * 384 = 384 MHz
     // PLLSAI_R = 384 / 7 = 54.857 MHz
     // Pixel clock = PLLSAI_R / PLLSAIDIVR = 54.857 / 2 = 27.429 MHz
-    let pllsaicfgr: usize = 0x4002_3834;
-    let rcc_cr = core::ptr::read_volatile(0x4002_3800 as *const u32);
-    let hse_on = rcc_cr & (1 << 16);
+    let pllsaicfgr: usize = 0x4002_3888; // RCC base (0x4002_3800) + offset 0x88
+    let rcc_cr_addr: usize = 0x4002_3800;
+    let rcc_cr_val = core::ptr::read_volatile(rcc_cr_addr as *const u32);
+    let hse_on = rcc_cr_val & (1 << 16);
     assert!(hse_on != 0, "HSE not enabled — cannot configure PLLSAI");
 
-    // Disable PLLSAI before reconfiguring
-    let rcc_cr2 = core::ptr::read_volatile(pllsaicfgr as *const u32);
-    core::ptr::write_volatile(
-        pllsaicfgr as *mut u32,
-        rcc_cr2 & !(1 << 24), // clear PLLSAION
-    );
+    // Disable PLLSAI before reconfiguring (PLLSAION is RCC_CR bit 24)
+    core::ptr::write_volatile(rcc_cr_addr as *mut u32, rcc_cr_val & !(1 << 24));
     cortex_m::asm::delay(168_000);
 
-    // Set PLLSAI_N=384 (bits 14:6), PLLSAI_R=DIV7 (bits 30:28)
-    // PLLSAI_P and PLLSAI_Q unused
-    core::ptr::write_volatile(
-        pllsaicfgr as *mut u32,
-        (384 << 6) | (6 << 28), // 6 = DIV7-1
-    );
+    // Set PLLSAI_N=384 (bits 14:6), PLLSAI_R=DIV7 (bits 30:28, one-hot 0b110)
+    let pllsaicfgr_val = (384 << 6) | (6 << 28);
+    core::ptr::write_volatile(pllsaicfgr as *mut u32, pllsaicfgr_val);
+    cortex_m::asm::delay(168_000);
 
-    // Enable PLLSAI
+    // Enable PLLSAI (PLLSAION is RCC_CR bit 24)
     core::ptr::write_volatile(
-        pllsaicfgr as *mut u32,
-        (384 << 6) | (6 << 28) | (1 << 24), // PLLSAION=1
+        rcc_cr_addr as *mut u32,
+        (rcc_cr_val & !(1 << 24)) | (1 << 24),
     );
 
     // Wait for PLLSAI lock (RCC_CR bit 29 = PLLSAIRDY)
-    let rcc_cr_addr: usize = 0x4002_3800;
     let mut timeout = 100_000u32;
     while core::ptr::read_volatile(rcc_cr_addr as *const u32) & (1 << 29) == 0 && timeout > 0 {
         timeout -= 1;
     }
     assert!(timeout > 0, "PLLSAI lock timeout");
+
+    #[cfg(feature = "defmt")]
+    {
+        let pcr = core::ptr::read_volatile(pllsaicfgr as *const u32);
+        let cr = core::ptr::read_volatile(rcc_cr_addr as *const u32);
+        defmt::info!(
+            "PLLSAI after lock: PLLSAICFGR={:08x} RCC_CR={:08x}",
+            pcr,
+            cr
+        );
+    }
 
     // PLLSAIDIVR = DIV2: pixel clock = 27.429 MHz
     let dckcfgr = 0x4002_388Cusize;
@@ -878,18 +883,28 @@ impl DisplayCtrl {
 
         unsafe {
             let gcr_after_panel = reg32(LTDC_BASE, 0x18);
+            let wcr_before = reg32(DSI_BASE, 0x404);
             #[cfg(feature = "defmt")]
-            defmt::info!("DC::new: GCR after panel = {:08x}", gcr_after_panel);
+            defmt::info!(
+                "DC::new: GCR={:08x} WCR_before={:08x}",
+                gcr_after_panel,
+                wcr_before
+            );
             ltdc_config_layer(fb_addr);
 
             // H1: Enable DSI wrapper LTDC forwarding after layer config.
-            // Matches sync BSP: dsi.refresh() sets WCR.LTDCEN=1.
-            // Without this, LTDC runs internally but DSI wrapper doesn't
-            // forward pixel data to the panel.
             reg32_set(DSI_BASE, 0x404, 1 << 2); // WCR.LTDCEN=1 (bit 2)
 
+            let wcr_after = reg32(DSI_BASE, 0x404);
+            let pllsaicfgr = core::ptr::read_volatile(0x4002_3834 as *const u32);
+            let dckcfgr = core::ptr::read_volatile(0x4002_388C as *const u32);
             #[cfg(feature = "defmt")]
-            defmt::info!("DC::new: WCR.LTDCEN set, all done");
+            defmt::info!(
+                "DC::new: WCR_after={:08x} PLLSAICFGR={:08x} DCKCFGR={:08x}",
+                wcr_after,
+                pllsaicfgr,
+                dckcfgr
+            );
         }
 
         DisplayCtrl {
