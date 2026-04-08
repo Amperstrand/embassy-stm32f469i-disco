@@ -441,7 +441,7 @@ unsafe fn ltdc_init() {
     reg32_write(LTDC_BASE, SRCR, 0x01);
     while reg32(LTDC_BASE, SRCR) & 0x01 != 0 {}
 
-    reg32_set(LTDC_BASE, GCR, (1 << 0) | (1 << 1)); // LTDCEN=1, bit 1 (reserved)
+    reg32_set(LTDC_BASE, GCR, 1 << 0); // LTDCEN=1
     let gcr_after_set = reg32(LTDC_BASE, GCR);
     #[cfg(feature = "defmt")]
     defmt::info!("LTDC GCR after set = {:08x}", gcr_after_set);
@@ -473,13 +473,13 @@ unsafe fn ltdc_config_layer(fb_addr: u32) {
     );
     reg32_write(LTDC_BASE, L1_BASE + 0x10, 0x02); // RGB565
     reg32_write(LTDC_BASE, L1_BASE + 0x14, 255); // CONSTA=255
-    reg32_write(LTDC_BASE, L1_BASE + 0x18, 0xFFFF0000); // L1DCCR: opaque red
+    reg32_write(LTDC_BASE, L1_BASE + 0x18, 0x00000000); // L1DCCR: transparent black
     reg32_write(LTDC_BASE, L1_BASE + 0x1C, 0x0407); // L1BFCR: BF1=constant(4), BF2=constant(7)
     reg32_write(LTDC_BASE, L1_BASE + 0x28, fb_addr);
     reg32_write(
         LTDC_BASE,
         L1_BASE + 0x2C,
-        (line_length + 3) | (line_length << 16),
+        (line_length + 7) | (line_length << 16),
     );
     reg32_write(LTDC_BASE, L1_BASE + 0x30, FB_HEIGHT as u32);
     reg32_write(LTDC_BASE, L1_BASE + 0x00, 1 << 0); // LEN=1
