@@ -357,6 +357,17 @@ unsafe fn ltdc_init() {
     let pllsai_rdy = core::ptr::read_volatile(rcc_cr_addr as *const u32) & (1 << 29);
     assert!(pllsai_rdy != 0, "PLLSAI not locked after embassy init");
 
+    // PLLSAIDIVR = DIV2: pixel clock = PLLSAI_R / 2 = 27.429 MHz.
+    // embassy_stm32::init() does NOT set this — only Ltdc::new() does,
+    // and we don't use Ltdc::new(). Must set it explicitly.
+    // Without this, pixel clock = 54.857 MHz (PLLSAI_R / DIV1), which
+    // is 2x the expected rate and causes display corruption.
+    let dckcfgr_addr: usize = 0x4002_388C; // RCC base + offset 0x8C
+    core::ptr::write_volatile(
+        dckcfgr_addr as *mut u32,
+        (core::ptr::read_volatile(dckcfgr_addr as *const u32) & !(0x03 << 16)) | (0b01 << 16),
+    );
+
     #[cfg(feature = "defmt")]
     {
         let pcr = core::ptr::read_volatile(pllsaicfgr_addr as *const u32);
