@@ -77,7 +77,7 @@ let p = embassy_stm32::init(config);
 let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
 let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, BoardHint::Auto);
 let mut fb = display.fb();
-fb.clear(Rgb565::BLACK);
+fb.clear(Rgb888::new(0, 0, 0));
 ```
 
 See `examples/display_blinky.rs` for a complete working example.

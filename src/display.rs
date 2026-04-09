@@ -2,15 +2,16 @@
 //! panel detection, and framebuffer management.
 
 use embassy_stm32::gpio::{AfType, Flex, OutputType, Pull, Speed};
-use embassy_stm32::ltdc::{
-    Ltdc, LtdcConfiguration, LtdcLayer, LtdcLayerConfig, PixelFormat, PolarityActive, PolarityEdge,
-};
+use embassy_stm32::ltdc::Ltdc;
 use embassy_stm32::rcc;
 use embassy_stm32::{dsihost, peripherals, Peri};
 use embassy_time::{block_for, Duration};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use embedded_graphics::{
-    draw_target::DrawTarget, pixelcolor::Rgb565, prelude::*, primitives::Rectangle,
+    draw_target::DrawTarget,
+    pixelcolor::{Rgb888, RgbColor},
+    prelude::*,
+    primitives::Rectangle,
 };
 use embedded_hal::delay::DelayNs;
 use nt35510::Nt35510;
@@ -18,6 +19,8 @@ use nt35510::Nt35510;
 use otm8009a::Otm8009A;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
 use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
+use stm32_metapac::dsihost::regs::{Ier0, Ier1};
+use stm32_metapac::{DSIHOST, LTDC};
 
 #[cfg(feature = "defmt")]
 use defmt as _;
@@ -47,8 +50,6 @@ pub const FB_HEIGHT: u16 = 800;
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
 const FMC_AF12: AfType = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up);
-const DSI_BASE: usize = 0x4001_6C00;
-const LTDC_BASE: usize = 0x4001_6800;
 
 // ── SDRAM ──────────────────────────────────────────────────────────────
 
@@ -182,208 +183,260 @@ const TX_ESCAPE_CKDIV: u8 = (DSI_LANE_BYTE_CLK_KHZ / 15_620) as u8;
 const H_SYNC: u16 = 2;
 const H_BACK_PORCH: u16 = 34;
 const H_FRONT_PORCH: u16 = 34;
-const V_SYNC: u16 = 1;
-const V_BACK_PORCH: u16 = 15;
-const V_FRONT_PORCH: u16 = 16;
-
-#[inline(always)]
-unsafe fn reg32(base: usize, offset: usize) -> u32 {
-    core::ptr::read_volatile((base + offset) as *const u32)
-}
-
-#[inline(always)]
-unsafe fn reg32_set(base: usize, offset: usize, val: u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, old | val);
-}
-
-#[inline(always)]
-unsafe fn reg32_clear(base: usize, offset: usize, val: u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, old & !val);
-}
-
-#[inline(always)]
-unsafe fn reg32_write(base: usize, offset: usize, val: u32) {
-    core::ptr::write_volatile((base + offset) as *mut u32, val);
-}
-
-#[inline(always)]
-unsafe fn reg32_modify(base: usize, offset: usize, f: impl FnOnce(u32) -> u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, f(old));
-}
+const V_SYNC: u16 = 120;
+const V_BACK_PORCH: u16 = 150;
+const V_FRONT_PORCH: u16 = 150;
 
 fn scaled_dsi_cycles(pixels: u16) -> u16 {
     ((pixels as u32 * DSI_LANE_BYTE_CLK_KHZ) / LTDC_PIXEL_CLK_KHZ) as u16
 }
 
 fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
-    const WRPCR: usize = 0x430;
-    const WISR: usize = 0x40C;
-    const PCTLR: usize = 0xA0;
-    const CLCR: usize = 0x94;
-    const PCONFR: usize = 0xA4;
-    const CCR: usize = 0x08;
-    const WPCR0: usize = 0x418;
-    const IER0: usize = 0xC4;
-    const IER1: usize = 0xC8;
-    const PCR: usize = 0x2C;
-    const MCR: usize = 0x04;
-    const WCFGR: usize = 0x400;
-    const VMCR: usize = 0x38;
-    const VPCR: usize = 0x3C;
-    const VCCR: usize = 0x40;
-    const VNPCR: usize = 0x44;
-    const LVCIDR: usize = 0x0C;
-    const LPCR: usize = 0x14;
-    const LCOLCR: usize = 0x10;
-    const VHSACR: usize = 0x48;
-    const VHBPCR: usize = 0x4C;
-    const VLCR: usize = 0x50;
-    const VVSACR: usize = 0x54;
-    const VVBPCR: usize = 0x58;
-    const VVFPCR: usize = 0x5C;
-    const VVACR: usize = 0x60;
-    const LPMCR: usize = 0x18;
-    const CLTCR: usize = 0x98;
-    const DLTCR: usize = 0x9C;
-
     dsi.disable_wrapper_dsi();
     dsi.disable();
 
-    unsafe {
-        reg32_write(DSI_BASE, PCTLR, 0);
-        reg32_clear(DSI_BASE, WRPCR, 1 << 0);
-        reg32_clear(DSI_BASE, WRPCR, 1 << 24);
-    }
+    DSIHOST.pctlr().modify(|w| {
+        w.set_cke(false);
+        w.set_den(false)
+    });
+
+    DSIHOST.wrpcr().modify(|w| w.set_pllen(false));
+    DSIHOST.wrpcr().write(|w| w.set_regen(false));
 
     #[cfg(feature = "defmt")]
     defmt::info!("DSIHOST: enabling regulator");
 
-    unsafe {
-        reg32_set(DSI_BASE, WRPCR, 1 << 24);
-    }
+    DSIHOST.wrpcr().write(|w| w.set_regen(true));
     for _ in 0..1000 {
-        if unsafe { reg32(DSI_BASE, WISR) & (1 << 12) != 0 } {
+        if DSIHOST.wisr().read().rrs() {
+            #[cfg(feature = "defmt")]
+            defmt::info!("DSIHOST Regulator ready");
             break;
         }
         block_for(Duration::from_millis(1));
     }
-    assert!(
-        unsafe { reg32(DSI_BASE, WISR) & (1 << 12) != 0 },
-        "DSI regulator timeout"
-    );
+    assert!(DSIHOST.wisr().read().rrs(), "DSI regulator timeout");
 
-    unsafe {
-        reg32_modify(DSI_BASE, WRPCR, |w| {
-            (w & !(0x7f << 2 | 0x0f << 11 | 0x03 << 16)) | (125 << 2) | (0x02 << 11)
-        });
-        reg32_set(DSI_BASE, WRPCR, 1 << 0);
-    }
+    DSIHOST.wrpcr().modify(|w| {
+        w.set_pllen(true);
+        w.set_ndiv(125);
+        w.set_idf(2);
+        w.set_odf(0);
+    });
 
     for _ in 0..1000 {
-        if unsafe { reg32(DSI_BASE, WISR) & (1 << 8) != 0 } {
+        block_for(Duration::from_millis(1));
+        if DSIHOST.wisr().read().pllls() {
+            #[cfg(feature = "defmt")]
+            defmt::info!("DSIHOST PLL locked");
             break;
         }
-        block_for(Duration::from_millis(1));
     }
-    assert!(
-        unsafe { reg32(DSI_BASE, WISR) & (1 << 8) != 0 },
-        "DSI PLL lock timeout"
-    );
+    assert!(DSIHOST.wisr().read().pllls(), "DSI PLL lock timeout");
 
-    unsafe {
-        reg32_write(DSI_BASE, PCTLR, 0b11);
-        reg32_modify(DSI_BASE, CLCR, |w| w | 1);
-        reg32_modify(DSI_BASE, PCONFR, |w| (w & !0x03) | 0x01);
-        reg32_write(DSI_BASE, CCR, TX_ESCAPE_CKDIV as u32);
-        reg32_write(DSI_BASE, WPCR0, 8);
-        reg32_write(DSI_BASE, IER0, 0);
-        reg32_write(DSI_BASE, IER1, 0);
-        reg32_write(DSI_BASE, PCR, 1 << 2);
+    const DSI_PIXEL_FORMAT_RGB888: u8 = 0x05;
+    const COLOR_CODING: u8 = DSI_PIXEL_FORMAT_RGB888;
+    const VS_POLARITY: bool = false;
+    const HS_POLARITY: bool = false;
+    const DE_POLARITY: bool = false;
+    const MODE: u8 = 2;
+    const NULL_PACKET_SIZE: u16 = 0x0FFF;
+    const NUMBER_OF_CHUNKS: u16 = 0;
+    const PACKET_SIZE: u16 = FB_WIDTH;
+    const LP_COMMAND_ENABLE: bool = true;
+    const LP_LARGEST_PACKET_SIZE: u8 = 16;
+    const LPVACT_LARGEST_PACKET_SIZE: u8 = 0;
+    const LPHORIZONTAL_FRONT_PORCH_ENABLE: bool = true;
+    const LPHORIZONTAL_BACK_PORCH_ENABLE: bool = true;
+    const LPVERTICAL_ACTIVE_ENABLE: bool = true;
+    const LPVERTICAL_FRONT_PORCH_ENABLE: bool = true;
+    const LPVERTICAL_BACK_PORCH_ENABLE: bool = true;
+    const LPVERTICAL_SYNC_ACTIVE_ENABLE: bool = true;
+    const FRAME_BTAACKNOWLEDGE_ENABLE: bool = false;
+    const CLOCK_LANE_HS2_LPTIME: u16 = 35;
+    const CLOCK_LANE_LP2_HSTIME: u16 = 35;
+    const DATA_LANE_HS2_LPTIME: u8 = 35;
+    const DATA_LANE_LP2_HSTIME: u8 = 35;
+    const DATA_LANE_MAX_READ_TIME: u16 = 0;
+    const STOP_WAIT_TIME: u8 = 10;
+    const MAX_TIME: u16 = if CLOCK_LANE_HS2_LPTIME > CLOCK_LANE_LP2_HSTIME {
+        CLOCK_LANE_HS2_LPTIME
+    } else {
+        CLOCK_LANE_LP2_HSTIME
+    };
 
-        reg32_clear(DSI_BASE, MCR, 1 << 0);
-        reg32_clear(DSI_BASE, WCFGR, 1 << 0);
-        reg32_write(
-            DSI_BASE,
-            VMCR,
-            0x02 | (1 << 8) | (1 << 9) | (1 << 10) | (1 << 11) | (1 << 12) | (1 << 13) | (1 << 15),
-        );
-        reg32_write(DSI_BASE, VPCR, FB_WIDTH as u32);
-        reg32_write(DSI_BASE, VCCR, 1);
-        reg32_write(DSI_BASE, VNPCR, 0);
-        reg32_write(DSI_BASE, LVCIDR, 0);
-        reg32_write(DSI_BASE, LPCR, 0);
-        reg32_write(DSI_BASE, LCOLCR, 0x00);
-        reg32_modify(DSI_BASE, WCFGR, |w| w & !(0x07 << 1));
+    DSIHOST.pctlr().write(|w| {
+        w.set_cke(true);
+        w.set_den(true);
+    });
 
-        reg32_write(DSI_BASE, VHSACR, scaled_dsi_cycles(H_SYNC) as u32);
-        reg32_write(DSI_BASE, VHBPCR, scaled_dsi_cycles(H_BACK_PORCH) as u32);
-        reg32_write(
-            DSI_BASE,
-            VLCR,
-            scaled_dsi_cycles(FB_WIDTH + H_SYNC + H_BACK_PORCH + H_FRONT_PORCH) as u32,
-        );
-        reg32_write(DSI_BASE, VVSACR, V_SYNC as u32);
-        reg32_write(DSI_BASE, VVBPCR, V_BACK_PORCH as u32);
-        reg32_write(DSI_BASE, VVFPCR, V_FRONT_PORCH as u32);
-        reg32_write(DSI_BASE, VVACR, FB_HEIGHT as u32);
-        reg32_write(DSI_BASE, LPMCR, (64 << 8) | 64);
-        reg32_write(DSI_BASE, CLTCR, (35 << 16) | 35);
-        // DLTCR: MRD_TIME[14:0]=0, LP2HS_TIME[23:16]=35, HS2LP_TIME[31:24]=35
-        reg32_write(DSI_BASE, DLTCR, (35 << 24) | (35 << 16));
-        // PCONFR: NL[1:0]=1 (2 lanes), SW_TIME[15:8]=10 (stop wait time)
-        reg32_modify(DSI_BASE, PCONFR, |w| (w & !0x03) | 0x01 | (10 << 8));
-    }
+    DSIHOST.clcr().modify(|w| {
+        w.set_dpcc(true);
+        w.set_acr(false);
+    });
 
-    dsi.enable();
-    dsi.enable_wrapper_dsi();
-    block_for(Duration::from_millis(120));
+    DSIHOST.pconfr().modify(|w| w.set_nl(1));
+    DSIHOST.ccr().modify(|w| w.set_txeckdiv(TX_ESCAPE_CKDIV));
+    DSIHOST.wpcr0().modify(|w| w.set_uix4(8));
+    DSIHOST.ier0().write_value(Ier0(0));
+    DSIHOST.ier1().write_value(Ier1(0));
+    DSIHOST.pcr().modify(|w| w.set_btae(true));
+
+    DSIHOST.mcr().modify(|w| w.set_cmdm(false));
+    DSIHOST.wcfgr().modify(|w| w.set_dsim(false));
+
+    DSIHOST.vmcr().modify(|w| w.set_vmt(MODE));
+    DSIHOST.vpcr().modify(|w| w.set_vpsize(PACKET_SIZE));
+    DSIHOST.vccr().modify(|w| w.set_numc(NUMBER_OF_CHUNKS));
+    DSIHOST.vnpcr().modify(|w| w.set_npsize(NULL_PACKET_SIZE));
+    DSIHOST.lvcidr().modify(|w| w.set_vcid(0));
+
+    DSIHOST.lpcr().modify(|w| {
+        w.set_dep(DE_POLARITY);
+        w.set_hsp(HS_POLARITY);
+        w.set_vsp(VS_POLARITY);
+    });
+
+    DSIHOST.lcolcr().modify(|w| w.set_colc(COLOR_CODING));
+    DSIHOST.wcfgr().modify(|w| w.set_colmux(COLOR_CODING));
+
+    DSIHOST
+        .vhsacr()
+        .modify(|w| w.set_hsa(scaled_dsi_cycles(H_SYNC)));
+    DSIHOST
+        .vhbpcr()
+        .modify(|w| w.set_hbp(scaled_dsi_cycles(H_BACK_PORCH)));
+    DSIHOST.vlcr().modify(|w| {
+        w.set_hline(scaled_dsi_cycles(
+            FB_WIDTH + H_SYNC + H_BACK_PORCH + H_FRONT_PORCH,
+        ))
+    });
+    DSIHOST.vvsacr().modify(|w| w.set_vsa(V_SYNC));
+    DSIHOST.vvbpcr().modify(|w| w.set_vbp(V_BACK_PORCH));
+    DSIHOST.vvfpcr().modify(|w| w.set_vfp(V_FRONT_PORCH));
+    DSIHOST.vvacr().modify(|w| w.set_va(FB_HEIGHT));
+
+    DSIHOST.vmcr().modify(|w| w.set_lpce(LP_COMMAND_ENABLE));
+    DSIHOST
+        .lpmcr()
+        .modify(|w| w.set_lpsize(LP_LARGEST_PACKET_SIZE));
+    DSIHOST
+        .lpmcr()
+        .modify(|w| w.set_vlpsize(LPVACT_LARGEST_PACKET_SIZE));
+
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lphfpe(LPHORIZONTAL_FRONT_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lphbpe(LPHORIZONTAL_BACK_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvae(LPVERTICAL_ACTIVE_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvfpe(LPVERTICAL_FRONT_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvbpe(LPVERTICAL_BACK_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvsae(LPVERTICAL_SYNC_ACTIVE_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_fbtaae(FRAME_BTAACKNOWLEDGE_ENABLE));
+
+    DSIHOST.cltcr().modify(|w| {
+        w.set_hs2lp_time(MAX_TIME);
+        w.set_lp2hs_time(MAX_TIME)
+    });
+
+    DSIHOST.dltcr().modify(|w| {
+        w.set_hs2lp_time(DATA_LANE_HS2_LPTIME);
+        w.set_lp2hs_time(DATA_LANE_LP2_HSTIME);
+        w.set_mrd_time(DATA_LANE_MAX_READ_TIME);
+    });
+
+    DSIHOST.pconfr().modify(|w| w.set_sw_time(STOP_WAIT_TIME));
 }
 
 fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>) {
-    let config = LtdcConfiguration {
-        active_width: FB_WIDTH,
-        active_height: FB_HEIGHT,
-        h_back_porch: H_BACK_PORCH,
-        h_front_porch: H_FRONT_PORCH,
-        v_back_porch: V_BACK_PORCH,
-        v_front_porch: V_FRONT_PORCH,
-        h_sync: H_SYNC,
-        v_sync: V_SYNC,
-        h_sync_polarity: PolarityActive::ActiveLow,
-        v_sync_polarity: PolarityActive::ActiveLow,
-        data_enable_polarity: PolarityActive::ActiveLow,
-        pixel_clock_polarity: PolarityEdge::RisingEdge,
-    };
+    use stm32_metapac::ltdc::vals::{Depol, Hspol, Pcpol, Vspol};
 
     ltdc.disable();
-    ltdc.init(&config);
-    unsafe {
-        reg32_write(LTDC_BASE, 0x34, 0x0000_00AA);
-        reg32_write(LTDC_BASE, 0x24, 0x01);
-        reg32_modify(LTDC_BASE, 0x18, |w| w | (1 << 0) | (1 << 1));
-        reg32_write(LTDC_BASE, 0x24, 0x01);
-    }
+    LTDC.gcr().modify(|w| {
+        w.set_hspol(Hspol::ACTIVE_HIGH);
+        w.set_vspol(Vspol::ACTIVE_HIGH);
+        w.set_depol(Depol::ACTIVE_LOW);
+        w.set_pcpol(Pcpol::RISING_EDGE);
+    });
+    LTDC.sscr().modify(|w| {
+        w.set_hsw(H_SYNC - 1);
+        w.set_vsh(V_SYNC - 1);
+    });
+    LTDC.bpcr().modify(|w| {
+        w.set_ahbp(H_SYNC + H_BACK_PORCH - 1);
+        w.set_avbp(V_SYNC + V_BACK_PORCH - 1);
+    });
+    LTDC.awcr().modify(|w| {
+        w.set_aah(V_SYNC + V_BACK_PORCH + FB_HEIGHT - 1);
+        w.set_aaw(FB_WIDTH + H_SYNC + H_BACK_PORCH - 1);
+    });
+    LTDC.twcr().modify(|w| {
+        w.set_totalh(V_SYNC + V_BACK_PORCH + FB_HEIGHT + V_FRONT_PORCH - 1);
+        w.set_totalw(FB_WIDTH + H_SYNC + H_BACK_PORCH + H_FRONT_PORCH - 1);
+    });
+    LTDC.bccr().modify(|w| {
+        w.set_bcred(0);
+        w.set_bcgreen(0);
+        w.set_bcblue(0);
+    });
+    LTDC.ier().modify(|w| {
+        w.set_terrie(true);
+        w.set_fuie(true);
+    });
+    ltdc.enable();
 }
 
-fn configure_ltdc_layer(ltdc: &mut Ltdc<'_, peripherals::LTDC>, fb_addr: u32) {
-    let layer = LtdcLayerConfig {
-        layer: LtdcLayer::Layer1,
-        pixel_format: PixelFormat::RGB565,
-        window_x0: 0,
-        window_x1: FB_WIDTH,
-        window_y0: 0,
-        window_y1: FB_HEIGHT,
-    };
+fn configure_ltdc_layer(_ltdc: &mut Ltdc<'_, peripherals::LTDC>, fb_addr: u32) {
+    use stm32_metapac::ltdc::vals::{Bf1, Bf2, Imr, Pf};
 
-    ltdc.init_layer(&layer, None);
-    unsafe {
-        reg32_write(LTDC_BASE, 0x84 + 0x28, fb_addr);
-        reg32_write(LTDC_BASE, 0x24, 0x01);
-        reg32_set(DSI_BASE, 0x404, 1 << 2);
-    }
+    const WINDOW_X0: u16 = 0;
+    const WINDOW_X1: u16 = FB_WIDTH;
+    const WINDOW_Y0: u16 = 0;
+    const WINDOW_Y1: u16 = FB_HEIGHT;
+    const ALPHA: u8 = 255;
+    const ALPHA0: u8 = 0;
+    const PIXEL_SIZE: u8 = 4u8;
+
+    LTDC.layer(0).whpcr().write(|w| {
+        w.set_whstpos(LTDC.bpcr().read().ahbp() + 1 + WINDOW_X0);
+        w.set_whsppos(LTDC.bpcr().read().ahbp() + WINDOW_X1);
+    });
+    LTDC.layer(0).wvpcr().write(|w| {
+        w.set_wvstpos(LTDC.bpcr().read().avbp() + 1 + WINDOW_Y0);
+        w.set_wvsppos(LTDC.bpcr().read().avbp() + WINDOW_Y1);
+    });
+    LTDC.layer(0).pfcr().write(|w| w.set_pf(Pf::ARGB8888));
+    LTDC.layer(0).dccr().modify(|w| {
+        w.set_dcblue(0);
+        w.set_dcgreen(0);
+        w.set_dcred(0);
+        w.set_dcalpha(ALPHA0);
+    });
+    LTDC.layer(0).cacr().write(|w| w.set_consta(ALPHA));
+    LTDC.layer(0).bfcr().write(|w| {
+        w.set_bf1(Bf1::CONSTANT);
+        w.set_bf2(Bf2::CONSTANT);
+    });
+    LTDC.layer(0).cfbar().write(|w| w.set_cfbadd(fb_addr));
+    LTDC.layer(0).cfblr().write(|w| {
+        w.set_cfbp(WINDOW_X1 * PIXEL_SIZE as u16);
+        w.set_cfbll(((WINDOW_X1 - WINDOW_X0) * PIXEL_SIZE as u16) + 3);
+    });
+    LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(WINDOW_Y1));
+    LTDC.layer(0).cr().modify(|w| w.set_len(true));
+    LTDC.srcr().modify(|w| w.set_imr(Imr::RELOAD));
 }
 
 struct DsiHostAdapter<'a, 'd> {
@@ -391,18 +444,13 @@ struct DsiHostAdapter<'a, 'd> {
 }
 
 impl<'a, 'd> DsiHostAdapter<'a, 'd> {
-    const GHCR: usize = 0x6C;
-    const GPDR: usize = 0x70;
-    const GPSR: usize = 0x74;
-    const ISR1: usize = 0xC8;
-
     fn new(dsi: &'a mut dsihost::DsiHost<'d, peripherals::DSIHOST>) -> Self {
         Self { dsi }
     }
 
     fn wait_command_fifo_empty(&self) -> Result<(), dsihost::Error> {
         for _ in 0..1000 {
-            if unsafe { reg32(DSI_BASE, Self::GPSR) & (1 << 0) } != 0 {
+            if DSIHOST.gpsr().read().cmdfe() {
                 return Ok(());
             }
             block_for(Duration::from_millis(1));
@@ -411,13 +459,12 @@ impl<'a, 'd> DsiHostAdapter<'a, 'd> {
     }
 
     fn raw_ghcr_write(&self, dt: u8, wclsb: u8, wcmsb: u8) {
-        unsafe {
-            reg32_write(
-                DSI_BASE,
-                Self::GHCR,
-                ((dt as u32) << 24) | (wclsb as u32) | ((wcmsb as u32) << 8),
-            );
-        }
+        DSIHOST.ghcr().write(|w| {
+            w.set_dt(dt);
+            w.set_vcid(0);
+            w.set_wclsb(wclsb);
+            w.set_wcmsb(wcmsb);
+        });
     }
 
     fn raw_dcs_short_read(&mut self, arg: u8, buf: &mut [u8]) -> Result<(), dsihost::Error> {
@@ -442,16 +489,19 @@ impl<'a, 'd> DsiHostAdapter<'a, 'd> {
         let mut bytes_left = buf.len();
         for _ in 0..1000 {
             if bytes_left > 0 {
-                let gpsr = unsafe { reg32(DSI_BASE, Self::GPSR) };
-                if gpsr & (1 << 3) == 0 {
-                    let fifoword = unsafe { reg32(DSI_BASE, Self::GPDR) };
-                    for b in fifoword.to_ne_bytes().iter().take(bytes_left.min(4)) {
+                let gpsr = DSIHOST.gpsr().read();
+                if !gpsr.prdfe() {
+                    let gpdr = DSIHOST.gpdr().read();
+                    for b in [gpdr.data1(), gpdr.data2(), gpdr.data3(), gpdr.data4()]
+                        .iter()
+                        .take(bytes_left.min(4))
+                    {
                         buf[idx] = *b;
                         bytes_left -= 1;
                         idx += 1;
                     }
                 }
-                if gpsr & (1 << 6) == 0 && unsafe { reg32(DSI_BASE, Self::ISR1) & (1 << 24) } != 0 {
+                if !gpsr.rcb() && (DSIHOST.isr1().read().0 & (1 << 24)) != 0 {
                     break;
                 }
                 block_for(Duration::from_millis(1));
@@ -491,7 +541,7 @@ impl DsiHostCtrlIo for DsiHostAdapter<'_, '_> {
                 let result = self.raw_dcs_short_read(arg, buf);
                 #[cfg(feature = "defmt")]
                 if let Err(e) = &result {
-                    defmt::warn!("DsiHostAdapter::read err={:?}", e);
+                    defmt::warn!("DsiHostAdapter::read err={:#?}", defmt::Debug2Format(&e));
                 }
                 result
             }
@@ -530,18 +580,18 @@ pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdControl
     let mut mismatch_count = 0u32;
     let mut first_mismatch_id: u8 = 0;
 
-    for attempt in 0..3 {
+    for _attempt in 0..3 {
         match panel.probe(dsi, &mut delay) {
             Ok(()) => {
                 #[cfg(feature = "defmt")]
-                defmt::info!("detect_panel: NT35510 detected on attempt {}", attempt + 1);
+                defmt::info!("detect_panel: NT35510 detected on attempt {}", _attempt + 1);
                 return LcdController::Nt35510;
             }
             Err(nt35510::Error::ProbeMismatch(id)) => {
                 #[cfg(feature = "defmt")]
                 defmt::info!(
                     "detect_panel: attempt {} mismatch, RDID2=0x{:02x}",
-                    attempt + 1,
+                    _attempt + 1,
                     id
                 );
                 if mismatch_count == 0 {
@@ -551,11 +601,11 @@ pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdControl
             }
             Err(nt35510::Error::DsiRead) => {
                 #[cfg(feature = "defmt")]
-                defmt::warn!("detect_panel: attempt {} DSI read error", attempt + 1);
+                defmt::warn!("detect_panel: attempt {} DSI read error", _attempt + 1);
             }
             Err(_) => {
                 #[cfg(feature = "defmt")]
-                defmt::warn!("detect_panel: attempt {} unknown error", attempt + 1);
+                defmt::warn!("detect_panel: attempt {} unknown error", _attempt + 1);
             }
         }
         BusyDelay.delay_ms(5);
@@ -579,32 +629,10 @@ pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdControl
     LcdController::Nt35510
 }
 
-// ── DSI command mode helpers ───────────────────────────────────────────
-
-fn dsi_set_lp_command_mode() {
-    const SYNC_CMCR_LP_BITS: u32 = 0x010F_7F00;
-    const CMCR_ARE_BIT: u32 = 1 << 1;
-
-    unsafe {
-        reg32_set(DSI_BASE, 0x41C, 1 << 22);
-        reg32_modify(DSI_BASE, 0x68, |w| (w | SYNC_CMCR_LP_BITS) & !CMCR_ARE_BIT);
-    }
-}
-
-fn dsi_set_hs_command_mode() {
-    const SYNC_CMCR_LP_BITS: u32 = 0x010F_7F00;
-    const CMCR_ARE_BIT: u32 = 1 << 1;
-
-    unsafe {
-        reg32_clear(DSI_BASE, 0x41C, 1 << 22);
-        reg32_modify(DSI_BASE, 0x68, |w| (w & !SYNC_CMCR_LP_BITS) & !CMCR_ARE_BIT);
-    }
-}
-
 // ── Display init (orchestrator) ────────────────────────────────────────
 
 pub struct DisplayCtrl<'d> {
-    framebuffer: &'static mut [u16],
+    framebuffer: &'static mut [u32],
     _ltdc: Ltdc<'d, peripherals::LTDC>,
     dsi: dsihost::DsiHost<'d, peripherals::DSIHOST>,
 }
@@ -639,51 +667,105 @@ impl<'d> DisplayCtrl<'d> {
         configure_dsi_host(&mut dsi);
 
         #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: dsi init done");
+        defmt::info!("DC::new: dsi init done (not yet enabled)");
 
-        let fb_slice: &'static mut [u16] = sdram.subslice_mut(0, FB_SIZE);
+        let fb_slice: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
         let fb_addr = fb_slice.as_mut_ptr() as u32;
         configure_ltdc(&mut ltdc);
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: ltdc init done");
 
-        dsi_set_lp_command_mode();
+        dsi.enable();
+        dsi.enable_wrapper_dsi();
+        block_for(Duration::from_millis(120));
 
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: LP mode set (before probe)");
-
-        let controller = {
-            let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
-            detect_panel(&mut dsi_adapter, hint)
+        let controller = match hint {
+            BoardHint::ForceOtm8009a => LcdController::Otm8009a,
+            _ => LcdController::Nt35510,
         };
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: detect_panel done");
 
         #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: GCR before panel = {:08x}", unsafe {
-            reg32(LTDC_BASE, 0x18)
-        });
+        defmt::info!("DC::new: GCR before panel = {:08x}", LTDC.twcr().read().0);
 
         match controller {
             LcdController::Nt35510 => {
                 BusyDelay.delay_ms(120);
                 #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: starting NT35510 init");
-                let mut panel = Nt35510::new();
-                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
-                let mut delay = BusyDelay;
-                panel
-                    .init_rgb565(
-                        &mut dsi_adapter,
-                        &mut delay,
-                        nt35510::Mode::Portrait,
-                        nt35510::ColorMap::Rgb,
-                    )
-                    .expect("NT35510 init failed");
+                defmt::info!("DC::new: starting NT35510 hardcoded init");
+
+                dsi.write_cmd(0, 0xF0, &[0x55, 0xAA, 0x52, 0x08, 0x01])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB0, &[0x03, 0x03, 0x03])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB6, &[0x46, 0x46, 0x46])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB1, &[0x03, 0x03, 0x03])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB7, &[0x36, 0x36, 0x36])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB2, &[0x00, 0x00, 0x02])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB8, &[0x26, 0x26, 0x26])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBF, &[0x01]).expect("DSI write");
+                dsi.write_cmd(0, 0xB3, &[0x09, 0x09, 0x09])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB9, &[0x36, 0x36, 0x36])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB5, &[0x08, 0x08, 0x08])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBA, &[0x26, 0x26, 0x26])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBC, &[0x00, 0x80, 0x00])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBD, &[0x00, 0x80, 0x00])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBE, &[0x00, 0x50]).expect("DSI write");
+
+                dsi.write_cmd(0, 0xF0, &[0x55, 0xAA, 0x52, 0x08, 0x00])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xB1, &[0xFC, 0x00]).expect("DSI write");
+                dsi.write_cmd(0, 0xB6, &[0x03]).expect("DSI write");
+                dsi.write_cmd(0, 0xB5, &[0x51]).expect("DSI write");
+                dsi.write_cmd(0, 0x00, &[0x00, 0xB7]).expect("DSI write");
+                dsi.write_cmd(0, 0xB8, &[0x01, 0x02, 0x02, 0x02])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBC, &[0x00, 0x00, 0x00])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xCC, &[0x03, 0x00, 0x00])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0xBA, &[0x01]).expect("DSI write");
+
+                dsi.write_cmd(0, 0x35, &[0x00]).expect("DSI write");
+                dsi.write_cmd(0, 0x3A, &[0x77]).expect("DSI write");
+
+                BusyDelay.delay_ms(200);
+
+                dsi.write_cmd(0, 0x36, &[0x00]).expect("DSI write");
+                dsi.write_cmd(0, 0x2A, &[0x00, 0x00, 0x01, 0xDF])
+                    .expect("DSI write");
+                dsi.write_cmd(0, 0x2B, &[0x00, 0x00, 0x03, 0x1F])
+                    .expect("DSI write");
+
+                dsi.write_cmd(0, 0x11, &[0x00]).expect("DSI write");
+                BusyDelay.delay_ms(120);
+
+                dsi.write_cmd(0, 0x3A, &[0x77]).expect("DSI write");
+
+                dsi.write_cmd(0, 0x51, &[0x7F]).expect("DSI write");
+                dsi.write_cmd(0, 0x53, &[0x2C]).expect("DSI write");
+                dsi.write_cmd(0, 0x55, &[0x02]).expect("DSI write");
+                dsi.write_cmd(0, 0x5E, &[0xFF]).expect("DSI write");
+
+                dsi.write_cmd(0, 0x29, &[0x00]).expect("DSI write");
+                dsi.write_cmd(0, 0x2C, &[0x00]).expect("DSI write");
+
                 #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: init_rgb565 done");
+                defmt::info!("DC::new: NT35510 hardcoded init done");
             }
             #[cfg(feature = "display")]
             LcdController::Otm8009a => {
@@ -706,15 +788,8 @@ impl<'d> DisplayCtrl<'d> {
             }
         }
 
-        // H2: Switch DSI from LP command mode to HS command mode after panel init.
-        // Matches sync BSP: force_rx_low_power(false) + AllInHighSpeed.
-        dsi_set_hs_command_mode();
-
         #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: HS mode set");
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: GCR={:08x}", unsafe { reg32(LTDC_BASE, 0x18) });
+        defmt::info!("DC::new: GCR={:08x}", LTDC.twcr().read().0);
 
         configure_ltdc_layer(&mut ltdc, fb_addr);
 
@@ -740,12 +815,16 @@ impl<'d> DisplayCtrl<'d> {
 }
 
 pub struct FramebufferView<'a> {
-    buffer: &'a mut [u16],
+    buffer: &'a mut [u32],
 }
 
 impl<'a> FramebufferView<'a> {
-    pub fn clear(&mut self, color: Rgb565) {
-        let raw = color.into_storage();
+    fn encode(color: Rgb888) -> u32 {
+        0xFF00_0000 | ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | (color.b() as u32)
+    }
+
+    pub fn clear(&mut self, color: Rgb888) {
+        let raw = Self::encode(color);
         for pixel in self.buffer.iter_mut() {
             *pixel = raw;
         }
@@ -753,7 +832,7 @@ impl<'a> FramebufferView<'a> {
 }
 
 impl<'a> DrawTarget for FramebufferView<'a> {
-    type Color = Rgb565;
+    type Color = Rgb888;
     type Error = core::convert::Infallible;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -764,7 +843,7 @@ impl<'a> DrawTarget for FramebufferView<'a> {
             let x = pixel.0.x as usize;
             let y = pixel.0.y as usize;
             if x < FB_WIDTH as usize && y < FB_HEIGHT as usize {
-                self.buffer[y * FB_WIDTH as usize + x] = pixel.1.into_storage();
+                self.buffer[y * FB_WIDTH as usize + x] = Self::encode(pixel.1);
             }
         }
         Ok(())
@@ -779,8 +858,8 @@ impl<'a> DrawTarget for FramebufferView<'a> {
         let left = area.top_left.x.max(0) as usize;
         let right = (area.top_left.x + area.size.width as i32).min(FB_WIDTH as i32) as usize;
 
-        let flat_color = color.into_iter().next().unwrap_or(Rgb565::BLACK);
-        let raw = flat_color.into_storage();
+        let flat_color = color.into_iter().next().unwrap_or(Rgb888::BLACK);
+        let raw = Self::encode(flat_color);
 
         for y in top..bottom {
             for x in left..right {
