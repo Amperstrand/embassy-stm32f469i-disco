@@ -46,3 +46,19 @@ embedded-io = "0.7"
 panic-halt = "1.0"
 heapless = "0.8"
 linked_list_allocator = "0.10"
+
+[[example]]
+name = "async_display_test"
+required-features = ["defmt"]
+
+[[example]]
+name = "test_display"
+required-features = ["defmt"]
+
+[[example]]
+name = "test_touch"
+required-features = ["defmt"]
+
+[[example]]
+name = "test_sdram_full"
+required-features = ["defmt"]

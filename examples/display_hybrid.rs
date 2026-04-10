@@ -42,6 +42,7 @@ const LCD_Y_SIZE: i32 = 800;
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+    #[allow(static_mut_refs)]
     unsafe {
         HEAP.lock().init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
     }

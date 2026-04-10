@@ -5,6 +5,16 @@ extern crate alloc;
 
 use panic_halt as _;
 
+#[cfg(feature = "defmt")]
+mod defmt_stubs {
+    #[no_mangle]
+    unsafe extern "C" fn _defmt_acquire() -> usize { 0 }
+    #[no_mangle]
+    unsafe extern "C" fn _defmt_write(_data: *const u8, _len: usize) {}
+    #[no_mangle]
+    unsafe extern "C" fn _defmt_release(_addr: usize) {}
+}
+
 use embassy_executor::Spawner;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::gpio::{Level, Output, Speed};
@@ -65,7 +75,7 @@ async fn main(_spawner: Spawner) {
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
 
-    let mut display = embassy_stm32f469i_disco::DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, embassy_stm32f469i_disco::BoardHint::Auto);
+    let display = embassy_stm32f469i_disco::DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, embassy_stm32f469i_disco::BoardHint::Auto);
     let _ = display;
 
     embassy_stm32::interrupt::USART6.disable();

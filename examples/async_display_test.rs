@@ -42,7 +42,6 @@ use embassy_stm32::rcc::{
 };
 use embassy_stm32::Config;
 use embassy_stm32f469i_disco::display::SdramCtrl;
-use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiWriteCommand, DsiReadCommand};
 
 const GPIOD: usize = 0x40020C00;
 const GPIOG: usize = 0x40021800;
@@ -72,229 +71,6 @@ unsafe fn reg32(base: usize, offset: usize) -> u32 {
 }
 unsafe fn reg32_write(base: usize, offset: usize, val: u32) {
     core::ptr::write_volatile((base + offset) as *mut u32, val);
-}
-unsafe fn reg32_set(base: usize, offset: usize, val: u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, old | val);
-}
-unsafe fn reg32_clear(base: usize, offset: usize, val: u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, old & !val);
-}
-unsafe fn reg32_modify(base: usize, offset: usize, f: impl FnOnce(u32) -> u32) {
-    let old = core::ptr::read_volatile((base + offset) as *const u32);
-    core::ptr::write_volatile((base + offset) as *mut u32, f(old));
-}
-
-fn delay_ms(ms: u32) {
-    let ticks_per_ms = 180_000_000 / 1000;
-    for _ in 0..ms { cortex_m::asm::delay(ticks_per_ms); }
-}
-
-struct RawDsi {
-    cmd_count: u32,
-}
-
-#[derive(defmt::Format)]
-enum DsiError {
-    FifoFull,
-}
-
-impl RawDsi {
-    const GHCR: usize = 0x6C;
-    const GPDR: usize = 0x70;
-    const GPSR: usize = 0x74;
-    const ISR1: usize = 0xC4;
-    unsafe fn wait_cmd_fifo_empty(&self) -> bool {
-        for _ in 0..10_000_000 {
-            if reg32(DSI_BASE, Self::GPSR) & 1 != 0 { return true; }
-        }
-        false
-    }
-    unsafe fn wait_read_not_busy(&self) -> bool {
-        for _ in 0..100_000 {
-            if reg32(DSI_BASE, Self::GPSR) & (1 << 4) == 0 { return true; }
-        }
-        false
-    }
-    unsafe fn wait_payload_fifo_not_empty(&self) -> bool {
-        for _ in 0..100_000 {
-            if reg32(DSI_BASE, Self::GPSR) & (1 << 2) == 0 { return true; }
-        }
-        false
-    }
-    unsafe fn ghcr_write(&mut self, wcmsb: u8, wclsb: u8, dt: u8) {
-        self.wait_cmd_fifo_empty();
-        reg32_write(DSI_BASE, Self::GHCR,
-            ((wcmsb as u32) << 16) | ((wclsb as u32) << 8) | (dt as u32));
-    }
-}
-
-impl DsiHostCtrlIo for RawDsi {
-    type Error = DsiError;
-
-    fn write(&mut self, cmd: DsiWriteCommand) -> Result<(), Self::Error> {
-        self.cmd_count += 1;
-        match cmd {
-            DsiWriteCommand::DcsShortP0 { arg } => unsafe {
-                self.ghcr_write(0, arg, 0x05);
-                defmt::trace!("DSI[{}] DcsShortP0 arg={:02x}", self.cmd_count, arg);
-                Ok(())
-            },
-            DsiWriteCommand::DcsShortP1 { arg, data } => unsafe {
-                self.ghcr_write(data, arg, 0x15);
-                defmt::trace!("DSI[{}] DcsShortP1 arg={:02x} data={:02x}", self.cmd_count, arg, data);
-                Ok(())
-            },
-            DsiWriteCommand::DcsLongWrite { arg, data } => unsafe {
-                if !self.wait_cmd_fifo_empty() {
-                    defmt::error!("DSI[{}] long write: cmd FIFO not empty before write", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                let mut fifoword = arg as u32;
-                for (i, byte) in data.iter().take(3).enumerate() {
-                    fifoword |= (*byte as u32) << (8 + 8 * i);
-                }
-                reg32_write(DSI_BASE, Self::GPDR, fifoword);
-                if data.len() > 3 {
-                    let mut i = 3;
-                    while i + 4 <= data.len() {
-                        let w: [u8; 4] = data[i..i + 4].try_into().unwrap();
-                        reg32_write(DSI_BASE, Self::GPDR, u32::from_ne_bytes(w));
-                        i += 4;
-                    }
-                    let mut fw = 0u32;
-                    let mut j = 0;
-                    while i < data.len() {
-                        fw |= (data[i] as u32) << (j * 8);
-                        i += 1;
-                        j += 1;
-                    }
-                    if j > 0 {
-                        reg32_write(DSI_BASE, Self::GPDR, fw);
-                    }
-                }
-                let len = (data.len() + 1) as u16;
-                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x39);
-                defmt::trace!("DSI[{}] DcsLongWrite arg={:02x} len={}", self.cmd_count, arg, len);
-                if !self.wait_cmd_fifo_empty() {
-                    let gpsr = reg32(DSI_BASE, Self::GPSR);
-                    let isr1 = reg32(DSI_BASE, Self::ISR1);
-                    let isr0 = reg32(DSI_BASE, 0xC0);
-                    let pctlr = reg32(DSI_BASE, 0xA0);
-                    let cmcr = reg32(DSI_BASE, 0x68);
-                    let cr = reg32(DSI_BASE, 0x04);
-                    let wcr = reg32(DSI_BASE, 0x404);
-                    defmt::error!("DSI[{}] STALL: GPSR={:08x} ISR0={:08x} ISR1={:08x} PCTLR={:08x} CMCR={:08x} CR={:08x} WCR={:08x}", 
-                        self.cmd_count, gpsr, isr0, isr1, pctlr, cmcr, cr, wcr);
-                    return Err(DsiError::FifoFull);
-                }
-                Ok(())
-            },
-            DsiWriteCommand::SetMaximumReturnPacketSize(len) => unsafe {
-                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x37);
-                defmt::trace!("DSI[{}] SetMaxReturnPacketSize len={}", self.cmd_count, len);
-                Ok(())
-            },
-            DsiWriteCommand::GenericShortP1 => unsafe {
-                self.ghcr_write(0, 0, 0x13);
-                defmt::trace!("DSI[{}] GenericShortP1", self.cmd_count);
-                Ok(())
-            },
-            DsiWriteCommand::GenericShortP2 => unsafe {
-                self.ghcr_write(0, 0, 0x23);
-                defmt::trace!("DSI[{}] GenericShortP2", self.cmd_count);
-                Ok(())
-            },
-            DsiWriteCommand::GenericLongWrite { arg, data } => unsafe {
-                if !self.wait_cmd_fifo_empty() {
-                    defmt::error!("DSI[{}] generic long write: cmd FIFO not empty", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                let mut fifoword = arg as u32;
-                for (i, byte) in data.iter().take(3).enumerate() {
-                    fifoword |= (*byte as u32) << (8 + 8 * i);
-                }
-                reg32_write(DSI_BASE, Self::GPDR, fifoword);
-                if data.len() > 3 {
-                    let mut i = 3;
-                    while i + 4 <= data.len() {
-                        let w: [u8; 4] = data[i..i + 4].try_into().unwrap();
-                        reg32_write(DSI_BASE, Self::GPDR, u32::from_ne_bytes(w));
-                        i += 4;
-                    }
-                    let mut fw = 0u32;
-                    let mut j = 0;
-                    while i < data.len() {
-                        fw |= (data[i] as u32) << (j * 8);
-                        i += 1;
-                        j += 1;
-                    }
-                    if j > 0 {
-                        reg32_write(DSI_BASE, Self::GPDR, fw);
-                    }
-                }
-                let len = (data.len() + 1) as u16;
-                self.ghcr_write(((len >> 8) & 0xFF) as u8, (len & 0xFF) as u8, 0x29);
-                defmt::trace!("DSI[{}] GenericLongWrite arg={:02x} len={}", self.cmd_count, arg, len);
-                if !self.wait_cmd_fifo_empty() {
-                    defmt::error!("DSI[{}] generic long write: cmd FIFO not empty after trigger", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                Ok(())
-            },
-            DsiWriteCommand::GenericShortP0 => unsafe {
-                self.ghcr_write(0, 0, 0x03);
-                defmt::trace!("DSI[{}] GenericShortP0", self.cmd_count);
-                Ok(())
-            },
-            _ => {
-                defmt::warn!("DSI[{}] unhandled command type", self.cmd_count);
-                Ok(())
-            },
-        }
-    }
-    fn read(&mut self, cmd: DsiReadCommand, buf: &mut [u8]) -> Result<(), Self::Error> {
-        self.cmd_count += 1;
-        if buf.len() > 2 && buf.len() <= 65_535 {
-            self.write(DsiWriteCommand::SetMaximumReturnPacketSize(buf.len() as u16))?;
-        }
-        match cmd {
-            DsiReadCommand::DcsShort { arg } => unsafe {
-                defmt::trace!("DSI[{}] DcsRead arg={:02x} len={}", self.cmd_count, arg, buf.len());
-                self.ghcr_write(0, arg, 0x06);
-                if !self.wait_read_not_busy() {
-                    defmt::error!("DSI[{}] read: timed out waiting for read not busy", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                if reg32(DSI_BASE, Self::GPSR) & (1 << 4) == 0
-                    && reg32(DSI_BASE, Self::ISR1) & (1 << 6) != 0 {
-                    defmt::error!("DSI[{}] read: PSE error (packet size error)", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                let mut idx = 0;
-                let mut left = buf.len();
-                while left > 0 {
-                    if !self.wait_payload_fifo_not_empty() {
-                    defmt::error!("DSI[{}] read: payload FIFO empty", self.cmd_count);
-                    return Err(DsiError::FifoFull);
-                }
-                    let val = reg32(DSI_BASE, Self::GPDR);
-                    let chunk = core::cmp::min(left, 4);
-                    for (i, byte) in buf[idx..idx + chunk].iter_mut().enumerate() {
-                        *byte = ((val >> (i * 8)) & 0xFF) as u8;
-                    }
-                    idx += chunk;
-                    left -= chunk;
-                }
-                Ok(())
-            },
-            _ => {
-                defmt::warn!("DSI[{}] unhandled read command type", self.cmd_count);
-                Ok(())
-            },
-        }
-    }
 }
 
 #[allow(non_snake_case)]
@@ -341,6 +117,8 @@ fn step(n: u8) {
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("=== async_display_test starting ===");
+    // SAFETY: HEAP is only initialized once, before any concurrent access.
+    #[allow(static_mut_refs)]
     unsafe {
         HEAP.lock().init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
     }
@@ -378,7 +156,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("STEP 3: calling DisplayCtrl::new()...");
     step(3);
-    let mut display = embassy_stm32f469i_disco::DisplayCtrl::new(
+    let _display = embassy_stm32f469i_disco::DisplayCtrl::new(
         &sdram,
         p.LTDC,
         p.DSIHOST,
@@ -615,118 +393,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let mut white = false;
     loop {
         fill_fb(fb_ptr, if white { 0xFFFFu16 } else { 0x0000u16 });
-        white = !white;
-        cortex_m::asm::delay(168_000_000);
-    }
-
-    // ── DIAG 0b: LTDC background-only test (no layer fetch from SDRAM) ──
-    // Disable layer, set background color to solid RED. If panel shows clean red,
-    // DSI/panel timing is fine and fault is in LTDC→SDRAM fetch path.
-    defmt::info!("DIAG 0b: LTDC background RED, layer disabled — clean red = DSI OK, SDRAM is the problem");
-    unsafe {
-        reg32_write(LTDC_BASE, 0x84, 0); // L1CR.LEN=0
-        reg32_write(LTDC_BASE, 0x2C, 0xF800); // BCCR=RED
-        reg32_write(LTDC_BASE, 0x24, 0x01); // SRCR reload
-    }
-    cortex_m::asm::delay(168_000_000 * 5);
-    unsafe {
-        let bccr = reg32(LTDC_BASE, 0x2C);
-        let l1cr = reg32(LTDC_BASE, 0x84);
-        let isr_after = reg32(LTDC_BASE, 0x48);
-        defmt::info!("DIAG 0b done: BCCR={:08x} L1CR={:08x} ISR={:08x}", bccr, l1cr, isr_after);
-    }
-
-    // Re-enable layer
-    unsafe {
-        reg32_write(LTDC_BASE, 0x84, 1); // L1CR.LEN=1
-        reg32_write(LTDC_BASE, 0x2C, 0);  // BCCR=black
-        reg32_write(LTDC_BASE, 0x24, 0x01); // SRCR reload
-    }
-
-    // ── TEST 1: Black → White → Black (brightness toggle) ──
-    // Blinking = LTDC reads our framebuffer. Static = LTDC reads elsewhere.
-    defmt::info!("TEST 1: BLACK → WHITE → BLACK (3s each)");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for p in fb.iter_mut() { *p = 0x0000; }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    defmt::info!("TEST 1: WHITE");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for p in fb.iter_mut() { *p = 0xFFFF; }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    defmt::info!("TEST 1: BLACK again");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for p in fb.iter_mut() { *p = 0x0000; }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    // ── TEST 2: Checkerboard 32px ──
-    defmt::info!("TEST 2: CHECKERBOARD 32px");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for y in 0..800u32 {
-            for x in 0..480u32 {
-                fb[(y * 480 + x) as usize] = if ((x / 32) + (y / 32)) % 2 == 0 { 0x0000 } else { 0xFFFF };
-            }
-        }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    // ── TEST 3: 8 horizontal color bars ──
-    defmt::info!("TEST 3: 8 COLOR BARS (B/G/C/R/M/Y/W/K)");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        let bar_height = 100u32;
-        const COLORS: [u16; 8] = [0xF800, 0x07E0, 0x001F, 0xFFE0, 0xF81F, 0x07FF, 0xFFFF, 0x0000];
-        for y in 0..800u32 {
-            let c = COLORS[(y / bar_height).min(7) as usize];
-            for x in 0..480u32 {
-                fb[(y * 480 + x) as usize] = c;
-            }
-        }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    // ── TEST 4: Vertical stripes 4px ──
-    defmt::info!("TEST 4: VERTICAL STRIPES 4px");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for y in 0..800u32 {
-            for x in 0..480u32 {
-                fb[(y * 480 + x) as usize] = if (x / 4) % 2 == 0 { 0x0000 } else { 0xFFFF };
-            }
-        }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    // ── TEST 5: White block 16x16 at (0,0) on black ──
-    defmt::info!("TEST 5: WHITE 16x16 block top-left on BLACK");
-    unsafe {
-        let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-        for p in fb.iter_mut() { *p = 0x0000; }
-        for y in 0..16u32 {
-            for x in 0..16u32 {
-                fb[(y * 480 + x) as usize] = 0xFFFF;
-            }
-        }
-    }
-    cortex_m::asm::delay(168_000_000 * 3);
-
-    // ── TEST 6: Blink loop (1s black/white) ──
-    defmt::info!("TEST 6: BLINK LOOP 1s — BLINKS = reads FB, STATIC = reads elsewhere");
-    let mut white = false;
-    loop {
-        unsafe {
-            let fb = core::slice::from_raw_parts_mut(fb_ptr, 480 * 800);
-            let val = if white { 0xFFFFu16 } else { 0x0000u16 };
-            for p in fb.iter_mut() { *p = val; }
-        }
         white = !white;
         cortex_m::asm::delay(168_000_000);
     }
