@@ -45,3 +45,4 @@ stm32-metapac = { version = "21", default-features = false, features = ["stm32f4
 embedded-io = "0.7"
 panic-halt = "1.0"
 heapless = "0.8"
+linked_list_allocator = "0.10"
