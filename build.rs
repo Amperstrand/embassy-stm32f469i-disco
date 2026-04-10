@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=memory.x");
-    println!("cargo:rustc-link-arg-examples=-Tlink.x");
-    println!("cargo:rustc-link-arg-examples=-Tdefmt.x");
+    // cortex-m-rt already emits -Tlink.x -Tdefmt.x via cargo:rustc-link-arg
+    // (applies to all targets including examples). Do NOT duplicate here.
 
     if let Err(err) = copy_memory_x_into_cortex_m_rt_out_dirs() {
         panic!("failed to make memory.x available to cortex-m-rt linker output: {err}");
