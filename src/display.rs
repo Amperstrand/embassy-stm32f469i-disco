@@ -576,12 +576,11 @@ pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdControl
     }
 
     let mut panel = Nt35510::new();
-    let mut delay = BusyDelay;
     let mut mismatch_count = 0u32;
     let mut first_mismatch_id: u8 = 0;
 
     for _attempt in 0..3 {
-        match panel.probe(dsi, &mut delay) {
+        match panel.probe(dsi) {
             Ok(()) => {
                 #[cfg(feature = "defmt")]
                 defmt::info!("detect_panel: NT35510 detected on attempt {}", _attempt + 1);
