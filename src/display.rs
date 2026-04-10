@@ -695,77 +695,24 @@ impl<'d> DisplayCtrl<'d> {
             LcdController::Nt35510 => {
                 BusyDelay.delay_ms(120);
                 #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: starting NT35510 hardcoded init");
+                defmt::info!("DC::new: starting NT35510 init via nt35510 crate");
 
-                dsi.write_cmd(0, 0xF0, &[0x55, 0xAA, 0x52, 0x08, 0x01])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB0, &[0x03, 0x03, 0x03])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB6, &[0x46, 0x46, 0x46])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB1, &[0x03, 0x03, 0x03])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB7, &[0x36, 0x36, 0x36])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB2, &[0x00, 0x00, 0x02])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB8, &[0x26, 0x26, 0x26])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBF, &[0x01]).expect("DSI write");
-                dsi.write_cmd(0, 0xB3, &[0x09, 0x09, 0x09])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB9, &[0x36, 0x36, 0x36])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB5, &[0x08, 0x08, 0x08])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBA, &[0x26, 0x26, 0x26])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBC, &[0x00, 0x80, 0x00])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBD, &[0x00, 0x80, 0x00])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBE, &[0x00, 0x50]).expect("DSI write");
-
-                dsi.write_cmd(0, 0xF0, &[0x55, 0xAA, 0x52, 0x08, 0x00])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xB1, &[0xFC, 0x00]).expect("DSI write");
-                dsi.write_cmd(0, 0xB6, &[0x03]).expect("DSI write");
-                dsi.write_cmd(0, 0xB5, &[0x51]).expect("DSI write");
-                dsi.write_cmd(0, 0x00, &[0x00, 0xB7]).expect("DSI write");
-                dsi.write_cmd(0, 0xB8, &[0x01, 0x02, 0x02, 0x02])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBC, &[0x00, 0x00, 0x00])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xCC, &[0x03, 0x00, 0x00])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0xBA, &[0x01]).expect("DSI write");
-
-                dsi.write_cmd(0, 0x35, &[0x00]).expect("DSI write");
-                dsi.write_cmd(0, 0x3A, &[0x77]).expect("DSI write");
-
-                BusyDelay.delay_ms(200);
-
-                dsi.write_cmd(0, 0x36, &[0x00]).expect("DSI write");
-                dsi.write_cmd(0, 0x2A, &[0x00, 0x00, 0x01, 0xDF])
-                    .expect("DSI write");
-                dsi.write_cmd(0, 0x2B, &[0x00, 0x00, 0x03, 0x1F])
-                    .expect("DSI write");
-
-                dsi.write_cmd(0, 0x11, &[0x00]).expect("DSI write");
-                BusyDelay.delay_ms(120);
-
-                dsi.write_cmd(0, 0x3A, &[0x77]).expect("DSI write");
-
-                dsi.write_cmd(0, 0x51, &[0x7F]).expect("DSI write");
-                dsi.write_cmd(0, 0x53, &[0x2C]).expect("DSI write");
-                dsi.write_cmd(0, 0x55, &[0x02]).expect("DSI write");
-                dsi.write_cmd(0, 0x5E, &[0xFF]).expect("DSI write");
-
-                dsi.write_cmd(0, 0x29, &[0x00]).expect("DSI write");
-                dsi.write_cmd(0, 0x2C, &[0x00]).expect("DSI write");
+                let mut panel = Nt35510::new();
+                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
+                let mut delay = BusyDelay;
+                let config = nt35510::Nt35510Config {
+                    mode: nt35510::Mode::Portrait,
+                    color_map: nt35510::ColorMap::Rgb,
+                    color_format: nt35510::ColorFormat::Rgb888,
+                    cols: FB_WIDTH,
+                    rows: FB_HEIGHT,
+                };
+                panel
+                    .init_with_config(&mut dsi_adapter, &mut delay, config)
+                    .expect("NT35510 init failed");
 
                 #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: NT35510 hardcoded init done");
+                defmt::info!("DC::new: NT35510 init done");
             }
             #[cfg(feature = "display")]
             LcdController::Otm8009a => {
