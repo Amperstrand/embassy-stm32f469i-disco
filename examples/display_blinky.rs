@@ -13,7 +13,7 @@ use embassy_stm32f469i_disco::{display::SdramCtrl, DisplayCtrl, FB_HEIGHT, FB_WI
 use embassy_time::Ticker;
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyleBuilder},
-    pixelcolor::Rgb565,
+    pixelcolor::Rgb888,
     prelude::*,
     primitives::{rectangle::Rectangle, PrimitiveStyle},
 };
@@ -103,13 +103,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let mut fb = display.fb();
 
-    fb.clear(Rgb565::CSS_NAVY);
+    fb.clear(Rgb888::new(0, 0, 128));
     defmt::info!("Framebuffer cleared");
 
     let style = MonoTextStyleBuilder::new()
         .font(&FONT_10X20)
-        .text_color(Rgb565::WHITE)
-        .background_color(Rgb565::CSS_NAVY)
+        .text_color(Rgb888::new(255, 255, 255))
+        .background_color(Rgb888::new(0, 0, 128))
         .build();
     embedded_graphics::text::Text::new("embassy-stm32f469i-disco", Point::new(20, 400), style)
         .draw(&mut fb)
@@ -119,7 +119,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let mut on = false;
     loop {
         ticker.next().await;
-        let color = if on { Rgb565::RED } else { Rgb565::CSS_NAVY };
+        let color = if on { Rgb888::new(255, 0, 0) } else { Rgb888::new(0, 0, 128) };
         Rectangle::new(Point::new(100, 350), Size::new(280, 100))
             .into_styled(PrimitiveStyle::with_fill(color))
             .draw(&mut fb)
