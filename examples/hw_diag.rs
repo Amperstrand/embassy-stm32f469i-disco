@@ -14,7 +14,7 @@ use embassy_stm32f469i_disco::{
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X9, MonoTextStyle, MonoTextStyleBuilder},
-    pixelcolor::Rgb565,
+    pixelcolor::Rgb888,
     prelude::*,
     primitives::{rectangle::Rectangle, PrimitiveStyle},
 };
@@ -50,13 +50,13 @@ unsafe extern "C" fn FMC() {
     cortex_m::asm::nop();
 }
 
-const BG: Rgb565 = Rgb565::new(0x1a, 0x1a, 0x2e);
-const PASS_COLOR: Rgb565 = Rgb565::new(0x00, 0xe0, 0x40);
-const FAIL_COLOR: Rgb565 = Rgb565::new(0xe0, 0x20, 0x20);
-const HEADER_COLOR: Rgb565 = Rgb565::new(0x40, 0xa0, 0xe0);
-const TEXT_COLOR: Rgb565 = Rgb565::new(0xe0, 0xe0, 0xe0);
-const DIM_TEXT: Rgb565 = Rgb565::new(0x80, 0x80, 0x80);
-const RUN_COLOR: Rgb565 = Rgb565::new(0xff, 0xc0, 0x00);
+const BG: Rgb888 = Rgb888::new(0x1a, 0x1a, 0x2e);
+const PASS_COLOR: Rgb888 = Rgb888::new(0x00, 0xe0, 0x40);
+const FAIL_COLOR: Rgb888 = Rgb888::new(0xe0, 0x20, 0x20);
+const HEADER_COLOR: Rgb888 = Rgb888::new(0x40, 0xa0, 0xe0);
+const TEXT_COLOR: Rgb888 = Rgb888::new(0xe0, 0xe0, 0xe0);
+const DIM_TEXT: Rgb888 = Rgb888::new(0x80, 0x80, 0x80);
+const RUN_COLOR: Rgb888 = Rgb888::new(0xff, 0xc0, 0x00);
 const MAX_TESTS: usize = 64;
 
 static mut RESULTS: [(&str, bool); MAX_TESTS] = [("", false); MAX_TESTS];
@@ -91,7 +91,7 @@ fn dwt_cycles() -> u32 {
     cortex_m::peripheral::DWT::cycle_count()
 }
 
-fn make_style() -> MonoTextStyle<'static, Rgb565> {
+fn make_style() -> MonoTextStyle<'static, Rgb888> {
     MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
         .text_color(TEXT_COLOR)
@@ -99,7 +99,7 @@ fn make_style() -> MonoTextStyle<'static, Rgb565> {
         .build()
 }
 
-fn make_header_style() -> MonoTextStyle<'static, Rgb565> {
+fn make_header_style() -> MonoTextStyle<'static, Rgb888> {
     MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
         .text_color(HEADER_COLOR)
@@ -107,7 +107,7 @@ fn make_header_style() -> MonoTextStyle<'static, Rgb565> {
         .build()
 }
 
-fn make_run_style() -> MonoTextStyle<'static, Rgb565> {
+fn make_run_style() -> MonoTextStyle<'static, Rgb888> {
     MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
         .text_color(RUN_COLOR)
@@ -120,7 +120,7 @@ fn draw_text(
     text: &str,
     x: i32,
     y: i32,
-    style: &MonoTextStyle<Rgb565>,
+    style: &MonoTextStyle<Rgb888>,
 ) {
     embedded_graphics::text::Text::new(text, Point::new(x, y), *style)
         .draw(fb)
@@ -131,7 +131,7 @@ fn draw_u32(
     fb: &mut embassy_stm32f469i_disco::FramebufferView<'_>,
     x: i32,
     y: i32,
-    style: &MonoTextStyle<Rgb565>,
+    style: &MonoTextStyle<Rgb888>,
     val: u32,
 ) {
     let mut buf = [0u8; 12];
@@ -760,7 +760,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("TEST Display Red Fill: RUNNING");
     {
-        fb.clear(Rgb565::RED);
+        fb.clear(Rgb888::RED);
         Timer::after(Duration::from_millis(200)).await;
         fb.clear(BG);
         unsafe { tpass("Display Red Fill") };
@@ -768,7 +768,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("TEST Display Green Fill: RUNNING");
     {
-        fb.clear(Rgb565::GREEN);
+        fb.clear(Rgb888::GREEN);
         Timer::after(Duration::from_millis(200)).await;
         fb.clear(BG);
         unsafe { tpass("Display Green Fill") };
@@ -776,7 +776,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("TEST Display Blue Fill: RUNNING");
     {
-        fb.clear(Rgb565::BLUE);
+        fb.clear(Rgb888::BLUE);
         Timer::after(Duration::from_millis(200)).await;
         fb.clear(BG);
         unsafe { tpass("Display Blue Fill") };
@@ -787,7 +787,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         for row in 0..FB_HEIGHT {
             let r = ((row as u32 * 255) / FB_HEIGHT as u32) as u8;
             let b = (255 - row as u32 * 255 / FB_HEIGHT as u32) as u8;
-            let color = Rgb565::new(r, 0, b);
+            let color = Rgb888::new(r, 0, b);
             Rectangle::new(Point::new(0, row as i32), Size::new(FB_WIDTH as u32, 1))
                 .into_styled(PrimitiveStyle::with_fill(color))
                 .draw(&mut fb)
@@ -803,8 +803,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
         fb.clear(BG);
         let ts = MonoTextStyleBuilder::new()
             .font(&FONT_6X9)
-            .text_color(Rgb565::WHITE)
-            .background_color(Rgb565::CSS_NAVY)
+            .text_color(Rgb888::WHITE)
+            .background_color(Rgb888::CSS_NAVY)
             .build();
         embedded_graphics::text::Text::new("HELLO WORLD", Point::new(120, 390), ts)
             .draw(&mut fb)
@@ -1126,7 +1126,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             if touch.td_status(&mut i2c).unwrap_or(0) > 0 {
                 if let Ok(point) = touch.get_touch(&mut i2c) {
                     if point.x >= 3 && point.x <= 476 && point.y >= 3 && point.y <= 796 {
-                        let cross = Rgb565::new(0xff, 0xff, 0x00);
+                        let cross = Rgb888::new(0xff, 0xff, 0x00);
                         let cs = PrimitiveStyle::with_fill(cross);
                         let cx = point.x as i32;
                         let cy = point.y as i32;

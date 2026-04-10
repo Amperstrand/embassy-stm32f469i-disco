@@ -11,7 +11,7 @@ use embassy_stm32::rcc::*;
 use embassy_stm32::Config;
 use embassy_stm32f469i_disco::{display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl};
 use embassy_time::Timer;
-use embedded_graphics::pixelcolor::Rgb565;
+use embedded_graphics::pixelcolor::Rgb888;
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -239,7 +239,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     }
 
     // Show summary on display
-    fb.clear(Rgb565::new(0x1a, 0x1a, 0x2e));
+    fb.clear(Rgb888::new(0x1a, 0x1a, 0x2e));
     let passed = PASSED.load(Ordering::Relaxed);
     let failed = FAILED.load(Ordering::Relaxed);
     let total = passed + failed;

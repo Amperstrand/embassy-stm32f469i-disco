@@ -15,7 +15,7 @@ use embassy_stm32f469i_disco::{display::SdramCtrl, DisplayCtrl, FB_HEIGHT, FB_WI
 use embassy_time::Ticker;
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyleBuilder},
-    pixelcolor::Rgb565,
+    pixelcolor::Rgb888,
     prelude::*,
     primitives::{rectangle::Rectangle, PrimitiveStyle},
 };
@@ -142,43 +142,43 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 5: Red fill
     defmt::info!("TEST fb_clear_red: RUNNING");
-    fb.clear(Rgb565::RED);
+    fb.clear(Rgb888::RED);
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     pass("fb_clear_red");
 
     // Test 6: Green fill
     defmt::info!("TEST fb_clear_green: RUNNING");
-    fb.clear(Rgb565::GREEN);
+    fb.clear(Rgb888::GREEN);
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     pass("fb_clear_green");
 
     // Test 7: Blue fill
     defmt::info!("TEST fb_clear_blue: RUNNING");
-    fb.clear(Rgb565::BLUE);
+    fb.clear(Rgb888::BLUE);
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     pass("fb_clear_blue");
 
     // Test 8: White fill
     defmt::info!("TEST fb_clear_white: RUNNING");
-    fb.clear(Rgb565::WHITE);
+    fb.clear(Rgb888::WHITE);
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     pass("fb_clear_white");
 
     // Test 9: Black fill
     defmt::info!("TEST fb_clear_black: RUNNING");
-    fb.clear(Rgb565::BLACK);
+    fb.clear(Rgb888::BLACK);
     embassy_time::Timer::after(embassy_time::Duration::from_millis(500)).await;
     pass("fb_clear_black");
 
     // Test 10: Gradient fill
     defmt::info!("TEST gradient_fill: RUNNING");
     for frame in 0..10u16 {
-        fb.clear(Rgb565::BLACK);
+        fb.clear(Rgb888::BLACK);
         for row in 0..FB_HEIGHT {
             let r = ((row as u32 * 255) / FB_HEIGHT as u32) as u8;
             let g = ((frame as u32 * 255) / 10) as u8;
             let b = (255 - row as u32 * 255 / FB_HEIGHT as u32) as u8;
-            let color = Rgb565::new(r, g, b);
+            let color = Rgb888::new(r, g, b);
             let rect = Rectangle::new(Point::new(0, row as i32), Size::new(FB_WIDTH as u32, 1));
             rect.into_styled(PrimitiveStyle::with_fill(color))
                 .draw(&mut fb)
@@ -190,11 +190,11 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // Test 11: Embedded graphics text
     defmt::info!("TEST embedded_graphics_text: RUNNING");
-    fb.clear(Rgb565::CSS_NAVY);
+    fb.clear(Rgb888::CSS_NAVY);
     let style = MonoTextStyleBuilder::new()
         .font(&FONT_10X20)
-        .text_color(Rgb565::WHITE)
-        .background_color(Rgb565::CSS_NAVY)
+        .text_color(Rgb888::WHITE)
+        .background_color(Rgb888::CSS_NAVY)
         .build();
     embedded_graphics::text::Text::new("embassy-stm32f469i-disco", Point::new(20, 400), style)
         .draw(&mut fb)
@@ -208,7 +208,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let mut on = false;
     for _ in 0..30 {
         ticker.next().await;
-        let color = if on { Rgb565::RED } else { Rgb565::GREEN };
+        let color = if on { Rgb888::RED } else { Rgb888::GREEN };
         Rectangle::new(
             Point::new(0, 0),
             Size::new(FB_WIDTH as u32, FB_HEIGHT as u32),
@@ -231,7 +231,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let g = ((seed >> 16) & 0xFF) as u8;
             seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
             let b = ((seed >> 16) & 0xFF) as u8;
-            fb.clear(Rgb565::new(r, g, b));
+            fb.clear(Rgb888::new(r, g, b));
             if frame % 100 == 0 {
                 embassy_time::Timer::after(embassy_time::Duration::from_millis(1)).await;
             }
@@ -254,12 +254,12 @@ async fn main(_spawner: embassy_executor::Spawner) {
     // Continuous display loop
     let mut hue = 0u32;
     loop {
-        fb.clear(Rgb565::BLACK);
+        fb.clear(Rgb888::BLACK);
         for row in 0..FB_HEIGHT {
             let r = ((hue + row as u32 * 3) % 256) as u8;
             let g = ((hue + row as u32 * 3 + 85) % 256) as u8;
             let b = ((hue + row as u32 * 3 + 170) % 256) as u8;
-            let color = Rgb565::new(r, g, b);
+            let color = Rgb888::new(r, g, b);
             let rect = Rectangle::new(Point::new(0, row as i32), Size::new(FB_WIDTH as u32, 1));
             rect.into_styled(PrimitiveStyle::with_fill(color))
                 .draw(&mut fb)
