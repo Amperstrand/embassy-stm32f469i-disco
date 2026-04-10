@@ -31,7 +31,7 @@ embedded-graphics = { version = "0.8", optional = true }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 
 [dev-dependencies]
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread", "defmt"] }
+embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread"] }
 embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
 embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
 embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
