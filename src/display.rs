@@ -49,6 +49,18 @@ pub const FB_WIDTH: u16 = 480;
 pub const FB_HEIGHT: u16 = 800;
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
+/// Errors that can occur during display initialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum DisplayInitError {
+    /// DSI host initialization timed out (regulator or PLL).
+    DsiTimeout,
+    /// DSI command write to the panel failed.
+    DsiWrite,
+    /// Panel initialization sequence failed.
+    PanelInit,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DisplayOrientation {
@@ -235,7 +247,7 @@ fn scaled_dsi_cycles(pixels: u16) -> u16 {
 fn configure_dsi_host(
     dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>,
     orientation: DisplayOrientation,
-) {
+) -> Result<(), DisplayInitError> {
     dsi.disable_wrapper_dsi();
     dsi.disable();
 
@@ -291,7 +303,9 @@ fn configure_dsi_host(
         }
         block_for(Duration::from_millis(1));
     }
-    assert!(DSIHOST.wisr().read().rrs(), "DSI regulator timeout");
+    if !DSIHOST.wisr().read().rrs() {
+        return Err(DisplayInitError::DsiTimeout);
+    }
 
     DSIHOST.wrpcr().modify(|w| {
         w.set_pllen(true);
@@ -308,7 +322,9 @@ fn configure_dsi_host(
             break;
         }
     }
-    assert!(DSIHOST.wisr().read().pllls(), "DSI PLL lock timeout");
+    if !DSIHOST.wisr().read().pllls() {
+        return Err(DisplayInitError::DsiTimeout);
+    }
 
     const DSI_PIXEL_FORMAT_RGB888: u8 = 0x05;
     const COLOR_CODING: u8 = DSI_PIXEL_FORMAT_RGB888;
@@ -434,6 +450,7 @@ fn configure_dsi_host(
     });
 
     DSIHOST.pconfr().modify(|w| w.set_sw_time(STOP_WAIT_TIME));
+    Ok(())
 }
 
 fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>, orientation: DisplayOrientation) {
@@ -756,7 +773,18 @@ impl<'d> DisplayCtrl<'d> {
         lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
     ) -> Self {
-        Self::new_with_orientation(
+        Self::try_new(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint).expect("display init failed")
+    }
+
+    pub fn try_new(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+    ) -> Result<Self, DisplayInitError> {
+        Self::try_new_with_orientation(
             sdram,
             ltdc,
             dsi_host,
@@ -776,6 +804,19 @@ impl<'d> DisplayCtrl<'d> {
         hint: BoardHint,
         orientation: DisplayOrientation,
     ) -> Self {
+        Self::try_new_with_orientation(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint, orientation)
+            .expect("display init failed")
+    }
+
+    pub fn try_new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Result<Self, DisplayInitError> {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: enter");
 
@@ -794,7 +835,7 @@ impl<'d> DisplayCtrl<'d> {
 
         let mut ltdc = Ltdc::new(ltdc);
         let mut dsi = dsihost::DsiHost::new(dsi_host, dsi_te);
-        configure_dsi_host(&mut dsi, orientation);
+        configure_dsi_host(&mut dsi, orientation)?;
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: dsi init done (not yet enabled)");
@@ -839,7 +880,7 @@ impl<'d> DisplayCtrl<'d> {
                 };
                 panel
                     .init_with_config(&mut dsi_adapter, &mut delay, config)
-                    .expect("NT35510 init failed");
+                    .map_err(|_| DisplayInitError::PanelInit)?;
 
                 #[cfg(feature = "defmt")]
                 defmt::info!("DC::new: NT35510 init done");
@@ -861,7 +902,7 @@ impl<'d> DisplayCtrl<'d> {
                 };
                 panel
                     .init(&mut dsi_adapter, config, &mut delay)
-                    .expect("OTM8009A init failed");
+                    .map_err(|_| DisplayInitError::PanelInit)?;
             }
         }
 
@@ -873,12 +914,12 @@ impl<'d> DisplayCtrl<'d> {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: layer config done");
 
-        DisplayCtrl {
+        Ok(DisplayCtrl {
             framebuffer: fb_slice,
             _ltdc: ltdc,
             dsi,
             orientation,
-        }
+        })
     }
 
     #[must_use]

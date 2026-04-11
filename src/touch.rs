@@ -21,6 +21,21 @@ const FT6X06_ADDR: u8 = 0x38;
 const REG_TD_STATUS: u8 = 0x02;
 const REG_TOUCH1_XH: u8 = 0x03;
 
+/// Error type for FT6X06 touch controller operations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TouchError {
+    /// I2C bus error (NACK, timeout, bus error, etc.).
+    I2c(i2c::Error),
+    /// I2C read succeeded but the response was unexpected (e.g. invalid vendor ID).
+    InvalidResponse,
+}
+
+impl From<i2c::Error> for TouchError {
+    fn from(e: i2c::Error) -> Self {
+        TouchError::I2c(e)
+    }
+}
+
 /// A single touch coordinate from the FT6X06.
 ///
 /// X ranges 0..479, Y ranges 0..799. Phantom touches may appear at edges —
@@ -54,10 +69,9 @@ impl TouchCtrl {
     pub fn td_status(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
-    ) -> Result<u8, ()> {
+    ) -> Result<u8, TouchError> {
         let mut buf = [0u8; 1];
-        i2c.blocking_write_read(self.i2c_addr, &[REG_TD_STATUS], &mut buf)
-            .map_err(|_| ())?;
+        i2c.blocking_write_read(self.i2c_addr, &[REG_TD_STATUS], &mut buf)?;
         Ok(buf[0] & 0x0F)
     }
 
@@ -67,10 +81,9 @@ impl TouchCtrl {
     pub fn get_touch(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
-    ) -> Result<TouchPoint, ()> {
+    ) -> Result<TouchPoint, TouchError> {
         let mut buf = [0u8; 4];
-        i2c.blocking_write_read(self.i2c_addr, &[REG_TOUCH1_XH], &mut buf)
-            .map_err(|_| ())?;
+        i2c.blocking_write_read(self.i2c_addr, &[REG_TOUCH1_XH], &mut buf)?;
 
         let x = (((buf[0] & 0x0F) as u16) << 8) | (buf[1] as u16);
         let y = (((buf[2] & 0x0F) as u16) << 8) | (buf[3] as u16);
@@ -83,10 +96,9 @@ impl TouchCtrl {
     pub fn read_vendor_id(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
-    ) -> Result<u8, ()> {
+    ) -> Result<u8, TouchError> {
         let mut buf = [0u8; 1];
-        i2c.blocking_write_read(self.i2c_addr, &[0xA8], &mut buf)
-            .map_err(|_| ())?;
+        i2c.blocking_write_read(self.i2c_addr, &[0xA8], &mut buf)?;
         Ok(buf[0])
     }
 
@@ -96,10 +108,9 @@ impl TouchCtrl {
     pub fn read_chip_model(
         &self,
         i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
-    ) -> Result<u8, ()> {
+    ) -> Result<u8, TouchError> {
         let mut buf = [0u8; 1];
-        i2c.blocking_write_read(self.i2c_addr, &[0xA3], &mut buf)
-            .map_err(|_| ())?;
+        i2c.blocking_write_read(self.i2c_addr, &[0xA3], &mut buf)?;
         Ok(buf[0])
     }
 }

@@ -30,7 +30,6 @@
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::identity_op)]
 #![allow(clippy::single_match)]
-#![allow(clippy::result_unit_err)]
 #![allow(clippy::new_without_default)]
 
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
@@ -43,9 +42,9 @@ pub mod touch;
 
 #[cfg(feature = "display")]
 pub use display::{
-    BoardHint, DisplayCtrl, FramebufferView, LcdController, SdramCtrl, FB_HEIGHT, FB_WIDTH,
-    SDRAM_SIZE_BYTES,
+    BoardHint, DisplayCtrl, DisplayInitError, FramebufferView, LcdController, SdramCtrl, FB_HEIGHT,
+    FB_WIDTH, SDRAM_SIZE_BYTES,
 };
 
 #[cfg(feature = "touch")]
-pub use touch::{TouchCtrl, TouchPoint};
+pub use touch::{TouchCtrl, TouchError, TouchPoint};
