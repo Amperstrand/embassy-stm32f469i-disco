@@ -49,6 +49,40 @@ pub const FB_WIDTH: u16 = 480;
 pub const FB_HEIGHT: u16 = 800;
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub enum DisplayOrientation {
+    Portrait,
+    Landscape,
+}
+
+impl DisplayOrientation {
+    pub const fn width(self) -> u16 {
+        match self {
+            DisplayOrientation::Portrait => FB_WIDTH,
+            DisplayOrientation::Landscape => FB_HEIGHT,
+        }
+    }
+
+    pub const fn height(self) -> u16 {
+        match self {
+            DisplayOrientation::Portrait => FB_HEIGHT,
+            DisplayOrientation::Landscape => FB_WIDTH,
+        }
+    }
+
+    pub const fn fb_size(self) -> usize {
+        (self.width() as usize) * (self.height() as usize)
+    }
+
+    pub const fn nt35510_mode(self) -> nt35510::Mode {
+        match self {
+            DisplayOrientation::Portrait => nt35510::Mode::Portrait,
+            DisplayOrientation::Landscape => nt35510::Mode::Landscape,
+        }
+    }
+}
+
 const FMC_AF12: AfType = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up);
 
 // ── SDRAM ──────────────────────────────────────────────────────────────
@@ -187,13 +221,55 @@ const V_SYNC: u16 = 120;
 const V_BACK_PORCH: u16 = 150;
 const V_FRONT_PORCH: u16 = 150;
 
+const H_SYNC_LANDSCAPE: u16 = 120;
+const H_BACK_PORCH_LANDSCAPE: u16 = 150;
+const H_FRONT_PORCH_LANDSCAPE: u16 = 150;
+const V_SYNC_LANDSCAPE: u16 = 2;
+const V_BACK_PORCH_LANDSCAPE: u16 = 34;
+const V_FRONT_PORCH_LANDSCAPE: u16 = 34;
+
 fn scaled_dsi_cycles(pixels: u16) -> u16 {
     ((pixels as u32 * DSI_LANE_BYTE_CLK_KHZ) / LTDC_PIXEL_CLK_KHZ) as u16
 }
 
-fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
+fn configure_dsi_host(
+    dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>,
+    orientation: DisplayOrientation,
+) {
     dsi.disable_wrapper_dsi();
     dsi.disable();
+
+    let (
+        h_sync,
+        h_back_porch,
+        h_front_porch,
+        v_sync,
+        v_back_porch,
+        v_front_porch,
+        fb_width,
+        fb_height,
+    ) = match orientation {
+        DisplayOrientation::Portrait => (
+            H_SYNC,
+            H_BACK_PORCH,
+            H_FRONT_PORCH,
+            V_SYNC,
+            V_BACK_PORCH,
+            V_FRONT_PORCH,
+            FB_WIDTH,
+            FB_HEIGHT,
+        ),
+        DisplayOrientation::Landscape => (
+            H_SYNC_LANDSCAPE,
+            H_BACK_PORCH_LANDSCAPE,
+            H_FRONT_PORCH_LANDSCAPE,
+            V_SYNC_LANDSCAPE,
+            V_BACK_PORCH_LANDSCAPE,
+            V_FRONT_PORCH_LANDSCAPE,
+            FB_HEIGHT,
+            FB_WIDTH,
+        ),
+    };
 
     DSIHOST.pctlr().modify(|w| {
         w.set_cke(false);
@@ -242,7 +318,7 @@ fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
     const MODE: u8 = 2;
     const NULL_PACKET_SIZE: u16 = 0x0FFF;
     const NUMBER_OF_CHUNKS: u16 = 0;
-    const PACKET_SIZE: u16 = FB_WIDTH;
+    const PACKET_SIZE_BASE: u16 = 480;
     const LP_COMMAND_ENABLE: bool = true;
     const LP_LARGEST_PACKET_SIZE: u8 = 16;
     const LPVACT_LARGEST_PACKET_SIZE: u8 = 0;
@@ -286,7 +362,7 @@ fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
     DSIHOST.wcfgr().modify(|w| w.set_dsim(false));
 
     DSIHOST.vmcr().modify(|w| w.set_vmt(MODE));
-    DSIHOST.vpcr().modify(|w| w.set_vpsize(PACKET_SIZE));
+    DSIHOST.vpcr().modify(|w| w.set_vpsize(PACKET_SIZE_BASE));
     DSIHOST.vccr().modify(|w| w.set_numc(NUMBER_OF_CHUNKS));
     DSIHOST.vnpcr().modify(|w| w.set_npsize(NULL_PACKET_SIZE));
     DSIHOST.lvcidr().modify(|w| w.set_vcid(0));
@@ -302,19 +378,19 @@ fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
 
     DSIHOST
         .vhsacr()
-        .modify(|w| w.set_hsa(scaled_dsi_cycles(H_SYNC)));
+        .modify(|w| w.set_hsa(scaled_dsi_cycles(h_sync)));
     DSIHOST
         .vhbpcr()
-        .modify(|w| w.set_hbp(scaled_dsi_cycles(H_BACK_PORCH)));
+        .modify(|w| w.set_hbp(scaled_dsi_cycles(h_back_porch)));
     DSIHOST.vlcr().modify(|w| {
         w.set_hline(scaled_dsi_cycles(
-            FB_WIDTH + H_SYNC + H_BACK_PORCH + H_FRONT_PORCH,
+            fb_width + h_sync + h_back_porch + h_front_porch,
         ))
     });
-    DSIHOST.vvsacr().modify(|w| w.set_vsa(V_SYNC));
-    DSIHOST.vvbpcr().modify(|w| w.set_vbp(V_BACK_PORCH));
-    DSIHOST.vvfpcr().modify(|w| w.set_vfp(V_FRONT_PORCH));
-    DSIHOST.vvacr().modify(|w| w.set_va(FB_HEIGHT));
+    DSIHOST.vvsacr().modify(|w| w.set_vsa(v_sync));
+    DSIHOST.vvbpcr().modify(|w| w.set_vbp(v_back_porch));
+    DSIHOST.vvfpcr().modify(|w| w.set_vfp(v_front_porch));
+    DSIHOST.vvacr().modify(|w| w.set_va(fb_height));
 
     DSIHOST.vmcr().modify(|w| w.set_lpce(LP_COMMAND_ENABLE));
     DSIHOST
@@ -360,8 +436,40 @@ fn configure_dsi_host(dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>) {
     DSIHOST.pconfr().modify(|w| w.set_sw_time(STOP_WAIT_TIME));
 }
 
-fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>) {
+fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>, orientation: DisplayOrientation) {
     use stm32_metapac::ltdc::vals::{Depol, Hspol, Pcpol, Vspol};
+
+    let (
+        h_sync,
+        h_back_porch,
+        h_front_porch,
+        v_sync,
+        v_back_porch,
+        v_front_porch,
+        fb_width,
+        fb_height,
+    ) = match orientation {
+        DisplayOrientation::Portrait => (
+            H_SYNC,
+            H_BACK_PORCH,
+            H_FRONT_PORCH,
+            V_SYNC,
+            V_BACK_PORCH,
+            V_FRONT_PORCH,
+            FB_WIDTH,
+            FB_HEIGHT,
+        ),
+        DisplayOrientation::Landscape => (
+            H_SYNC_LANDSCAPE,
+            H_BACK_PORCH_LANDSCAPE,
+            H_FRONT_PORCH_LANDSCAPE,
+            V_SYNC_LANDSCAPE,
+            V_BACK_PORCH_LANDSCAPE,
+            V_FRONT_PORCH_LANDSCAPE,
+            FB_HEIGHT,
+            FB_WIDTH,
+        ),
+    };
 
     ltdc.disable();
     LTDC.gcr().modify(|w| {
@@ -371,20 +479,20 @@ fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>) {
         w.set_pcpol(Pcpol::RISING_EDGE);
     });
     LTDC.sscr().modify(|w| {
-        w.set_hsw(H_SYNC - 1);
-        w.set_vsh(V_SYNC - 1);
+        w.set_hsw(h_sync - 1);
+        w.set_vsh(v_sync - 1);
     });
     LTDC.bpcr().modify(|w| {
-        w.set_ahbp(H_SYNC + H_BACK_PORCH - 1);
-        w.set_avbp(V_SYNC + V_BACK_PORCH - 1);
+        w.set_ahbp(h_sync + h_back_porch - 1);
+        w.set_avbp(v_sync + v_back_porch - 1);
     });
     LTDC.awcr().modify(|w| {
-        w.set_aah(V_SYNC + V_BACK_PORCH + FB_HEIGHT - 1);
-        w.set_aaw(FB_WIDTH + H_SYNC + H_BACK_PORCH - 1);
+        w.set_aah(v_sync + v_back_porch + fb_height - 1);
+        w.set_aaw(fb_width + h_sync + h_back_porch - 1);
     });
     LTDC.twcr().modify(|w| {
-        w.set_totalh(V_SYNC + V_BACK_PORCH + FB_HEIGHT + V_FRONT_PORCH - 1);
-        w.set_totalw(FB_WIDTH + H_SYNC + H_BACK_PORCH + H_FRONT_PORCH - 1);
+        w.set_totalh(v_sync + v_back_porch + fb_height + v_front_porch - 1);
+        w.set_totalw(fb_width + h_sync + h_back_porch + h_front_porch - 1);
     });
     LTDC.bccr().modify(|w| {
         w.set_bcred(0);
@@ -398,24 +506,26 @@ fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>) {
     ltdc.enable();
 }
 
-fn configure_ltdc_layer(_ltdc: &mut Ltdc<'_, peripherals::LTDC>, fb_addr: u32) {
+fn configure_ltdc_layer(
+    _ltdc: &mut Ltdc<'_, peripherals::LTDC>,
+    fb_addr: u32,
+    orientation: DisplayOrientation,
+) {
     use stm32_metapac::ltdc::vals::{Bf1, Bf2, Imr, Pf};
 
-    const WINDOW_X0: u16 = 0;
-    const WINDOW_X1: u16 = FB_WIDTH;
-    const WINDOW_Y0: u16 = 0;
-    const WINDOW_Y1: u16 = FB_HEIGHT;
+    let window_x1 = orientation.width();
+    let window_y1 = orientation.height();
     const ALPHA: u8 = 255;
     const ALPHA0: u8 = 0;
     const PIXEL_SIZE: u8 = 4u8;
 
     LTDC.layer(0).whpcr().write(|w| {
-        w.set_whstpos(LTDC.bpcr().read().ahbp() + 1 + WINDOW_X0);
-        w.set_whsppos(LTDC.bpcr().read().ahbp() + WINDOW_X1);
+        w.set_whstpos(LTDC.bpcr().read().ahbp() + 1);
+        w.set_whsppos(LTDC.bpcr().read().ahbp() + window_x1);
     });
     LTDC.layer(0).wvpcr().write(|w| {
-        w.set_wvstpos(LTDC.bpcr().read().avbp() + 1 + WINDOW_Y0);
-        w.set_wvsppos(LTDC.bpcr().read().avbp() + WINDOW_Y1);
+        w.set_wvstpos(LTDC.bpcr().read().avbp() + 1);
+        w.set_wvsppos(LTDC.bpcr().read().avbp() + window_y1);
     });
     LTDC.layer(0).pfcr().write(|w| w.set_pf(Pf::ARGB8888));
     LTDC.layer(0).dccr().modify(|w| {
@@ -431,10 +541,10 @@ fn configure_ltdc_layer(_ltdc: &mut Ltdc<'_, peripherals::LTDC>, fb_addr: u32) {
     });
     LTDC.layer(0).cfbar().write(|w| w.set_cfbadd(fb_addr));
     LTDC.layer(0).cfblr().write(|w| {
-        w.set_cfbp(WINDOW_X1 * PIXEL_SIZE as u16);
-        w.set_cfbll(((WINDOW_X1 - WINDOW_X0) * PIXEL_SIZE as u16) + 3);
+        w.set_cfbp(window_x1 * PIXEL_SIZE as u16);
+        w.set_cfbll((window_x1 * PIXEL_SIZE as u16) + 3);
     });
-    LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(WINDOW_Y1));
+    LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(window_y1));
     LTDC.layer(0).cr().modify(|w| w.set_len(true));
     LTDC.srcr().modify(|w| w.set_imr(Imr::RELOAD));
 }
@@ -634,6 +744,7 @@ pub struct DisplayCtrl<'d> {
     framebuffer: &'static mut [u32],
     _ltdc: Ltdc<'d, peripherals::LTDC>,
     dsi: dsihost::DsiHost<'d, peripherals::DSIHOST>,
+    orientation: DisplayOrientation,
 }
 
 impl<'d> DisplayCtrl<'d> {
@@ -644,6 +755,26 @@ impl<'d> DisplayCtrl<'d> {
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
         lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
+    ) -> Self {
+        Self::new_with_orientation(
+            sdram,
+            ltdc,
+            dsi_host,
+            dsi_te,
+            lcd_reset,
+            hint,
+            DisplayOrientation::Portrait,
+        )
+    }
+
+    pub fn new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
     ) -> Self {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: enter");
@@ -663,14 +794,14 @@ impl<'d> DisplayCtrl<'d> {
 
         let mut ltdc = Ltdc::new(ltdc);
         let mut dsi = dsihost::DsiHost::new(dsi_host, dsi_te);
-        configure_dsi_host(&mut dsi);
+        configure_dsi_host(&mut dsi, orientation);
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: dsi init done (not yet enabled)");
 
-        let fb_slice: &'static mut [u32] = sdram.subslice_mut(0, FB_SIZE);
+        let fb_slice: &'static mut [u32] = sdram.subslice_mut(0, orientation.fb_size());
         let fb_addr = fb_slice.as_mut_ptr() as u32;
-        configure_ltdc(&mut ltdc);
+        configure_ltdc(&mut ltdc, orientation);
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: ltdc init done");
@@ -700,7 +831,7 @@ impl<'d> DisplayCtrl<'d> {
                 let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
                 let mut delay = BusyDelay;
                 let config = nt35510::Nt35510Config {
-                    mode: nt35510::Mode::Portrait,
+                    mode: orientation.nt35510_mode(),
                     color_map: nt35510::ColorMap::Rgb,
                     color_format: nt35510::ColorFormat::Rgb888,
                     cols: FB_WIDTH,
@@ -737,7 +868,7 @@ impl<'d> DisplayCtrl<'d> {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: GCR={:08x}", LTDC.twcr().read().0);
 
-        configure_ltdc_layer(&mut ltdc, fb_addr);
+        configure_ltdc_layer(&mut ltdc, fb_addr, orientation);
 
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: layer config done");
@@ -746,6 +877,7 @@ impl<'d> DisplayCtrl<'d> {
             framebuffer: fb_slice,
             _ltdc: ltdc,
             dsi,
+            orientation,
         }
     }
 
@@ -753,15 +885,22 @@ impl<'d> DisplayCtrl<'d> {
     pub fn fb(&mut self) -> FramebufferView<'_> {
         FramebufferView {
             buffer: self.framebuffer,
+            width: self.orientation.width() as usize,
+            height: self.orientation.height() as usize,
         }
     }
     pub fn dsi(&mut self) -> &mut dsihost::DsiHost<'d, peripherals::DSIHOST> {
         &mut self.dsi
     }
+    pub fn orientation(&self) -> DisplayOrientation {
+        self.orientation
+    }
 }
 
 pub struct FramebufferView<'a> {
     buffer: &'a mut [u32],
+    width: usize,
+    height: usize,
 }
 
 impl<'a> FramebufferView<'a> {
@@ -788,8 +927,8 @@ impl<'a> DrawTarget for FramebufferView<'a> {
         for pixel in pixels {
             let x = pixel.0.x as usize;
             let y = pixel.0.y as usize;
-            if x < FB_WIDTH as usize && y < FB_HEIGHT as usize {
-                self.buffer[y * FB_WIDTH as usize + x] = Self::encode(pixel.1);
+            if x < self.width && y < self.height {
+                self.buffer[y * self.width + x] = Self::encode(pixel.1);
             }
         }
         Ok(())
@@ -800,16 +939,16 @@ impl<'a> DrawTarget for FramebufferView<'a> {
         I: IntoIterator<Item = Self::Color>,
     {
         let top = area.top_left.y.max(0) as usize;
-        let bottom = (area.top_left.y + area.size.height as i32).min(FB_HEIGHT as i32) as usize;
+        let bottom = (area.top_left.y + area.size.height as i32).min(self.height as i32) as usize;
         let left = area.top_left.x.max(0) as usize;
-        let right = (area.top_left.x + area.size.width as i32).min(FB_WIDTH as i32) as usize;
+        let right = (area.top_left.x + area.size.width as i32).min(self.width as i32) as usize;
 
         let flat_color = color.into_iter().next().unwrap_or(Rgb888::BLACK);
         let raw = Self::encode(flat_color);
 
         for y in top..bottom {
             for x in left..right {
-                self.buffer[y * FB_WIDTH as usize + x] = raw;
+                self.buffer[y * self.width + x] = raw;
             }
         }
         Ok(())
@@ -823,6 +962,6 @@ impl<'a> DrawTarget for FramebufferView<'a> {
 
 impl<'a> OriginDimensions for FramebufferView<'a> {
     fn size(&self) -> Size {
-        Size::new(FB_WIDTH as u32, FB_HEIGHT as u32)
+        Size::new(self.width as u32, self.height as u32)
     }
 }
