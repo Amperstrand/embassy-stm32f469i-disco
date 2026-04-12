@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Board support package for STM32F469I-Discovery with Embassy async framework"
+readme = "README.md"
 repository = "https://github.com/Amperstrand/embassy-stm32f469i-disco"
 keywords = ["embedded", "stm32", "discovery", "embassy", "async", "no-std"]
 categories = ["embedded", "hardware-support", "no-std"]

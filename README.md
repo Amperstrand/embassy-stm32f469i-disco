@@ -2,6 +2,18 @@
 
 Board support package for the [STM32F469I-Discovery](https://www.st.com/en/evaluation-tools/stm32f469i-discovery.html) board, built on the [Embassy](https://embassy.dev/) async framework.
 
+```mermaid
+flowchart TD
+    subgraph "embassy-stm32f469i-disco"
+        LIB["BSP Library"]
+        DISPLAY["Display<br/>DSI/LTDC + SDRAM"]
+        TOUCH["Touch<br/>FT6X06 via I2C"]
+    end
+    DISPLAY -->|DSI| PANEL["NT35510 Panel"]
+    TOUCH -->|I2C| CONTROLLER["FT6X06"]
+    LIB --> EMBASSY["embassy-stm32"]
+```
+
 > **Related BSP:** A sync (blocking) version using `stm32f4xx-hal` is available at [stm32f469i-disc](https://github.com/Amperstrand/stm32f469i-disc).
 >
 > - **Sync BSP:** Use for blocking HAL, `stm32f4xx-hal` compatibility, simpler code paths
@@ -31,6 +43,21 @@ probe-rs run --chip STM32F469NIHx --target thumbv7em-none-eabihf --example blink
 [dependencies]
 embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32f469i-disco", branch = "main" }
 ```
+
+## Clock Configuration
+
+The BSP uses a dual-PLL configuration at 180 MHz SYSCLK. PLL1 drives the CPU and bus clocks, while PLLSAI provides the 48 MHz USB clock and the LTDC pixel clock.
+
+```mermaid
+flowchart LR
+    HSE["HSE 8MHz"] --> PLL1["PLL1 180MHz"]
+    HSE --> PLLSAI["PLLSAI 192MHz VCO"]
+    PLL1 --> SYSCLK["SYSCLK 180MHz"]
+    PLLSAI --> USB48["48MHz USB<br/>PLLSAI_P / 8"]
+    PLLSAI --> PIXEL["54.86MHz LTDC<br/>PLLSAI_R / 7"]
+```
+
+See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full clock tree, register-level details, and the DCKCFGR2 workaround.
 
 ## Hardware
 
