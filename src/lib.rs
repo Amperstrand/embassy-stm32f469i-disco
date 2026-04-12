@@ -42,8 +42,8 @@ pub mod touch;
 
 #[cfg(feature = "display")]
 pub use display::{
-    BoardHint, DisplayCtrl, DisplayInitError, FramebufferView, LcdController, SdramCtrl, FB_HEIGHT,
-    FB_WIDTH, SDRAM_SIZE_BYTES,
+    Argb8888, BoardHint, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError,
+    FramebufferView, LcdController, Rgb565, SdramCtrl, FB_HEIGHT, FB_WIDTH, SDRAM_SIZE_BYTES,
 };
 
 #[cfg(feature = "touch")]

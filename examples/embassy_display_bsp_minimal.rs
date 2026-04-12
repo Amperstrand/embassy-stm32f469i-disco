@@ -481,11 +481,11 @@ async fn main(_spawner: Spawner) {
     ltdc.disable();
     unsafe {
         reg32_write(RCC_BASE, RCC_PLLSAICFGR, (384 << 6) | (7 << 28));
-        reg32_modify(RCC_BASE, RCC_DCKCFGR, |w| (w & !(0x3 << 16)) | (0x0 << 16));
+        reg32_modify(RCC_BASE, RCC_DCKCFGR, |w| w & !(0x3 << 16));
         reg32_set(RCC_BASE, RCC_CR, 1 << 28);
         while reg32(RCC_BASE, RCC_CR) & (1 << 29) == 0 {}
 
-        reg32_write(LTDC_BASE, LTDC_SSCR, (0 << 16) | 1);
+        reg32_write(LTDC_BASE, LTDC_SSCR, 1);
         reg32_write(LTDC_BASE, LTDC_BPCR, (15 << 16) | 35);
         reg32_write(LTDC_BASE, LTDC_AWCR, (815 << 16) | 515);
         reg32_write(LTDC_BASE, LTDC_TWCR, (831 << 16) | 549);
@@ -597,7 +597,7 @@ unsafe fn raw_dsi_write_cmd(address: u8, data: &[u8]) {
         reg32_write(
             DSI_BASE,
             DSI_GHCR,
-            (dt as u32) | ((len & 0xFF) as u32) << 8 | (((len >> 8) & 0xFF) as u32) << 16,
+            (dt as u32) | (len & 0xFF) << 8 | ((len >> 8) & 0xFF) << 16,
         );
     }
 }

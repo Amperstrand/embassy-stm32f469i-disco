@@ -9,7 +9,7 @@ use embassy_time::{block_for, Duration};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use embedded_graphics::{
     draw_target::DrawTarget,
-    pixelcolor::{Rgb888, RgbColor},
+    pixelcolor::{Rgb565 as EgRgb565, Rgb888, RgbColor},
     prelude::*,
     primitives::Rectangle,
 };
@@ -45,9 +45,107 @@ impl embedded_hal_02::blocking::delay::DelayMs<u32> for DelayMsAdapter {
 }
 
 pub const SDRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
-pub const FB_WIDTH: u16 = 480;
-pub const FB_HEIGHT: u16 = 800;
+
+/// Panel height in pixels (portrait). Re-exported from nt35510.
+pub use nt35510::PANEL_HEIGHT as FB_HEIGHT;
+/// Panel width in pixels (portrait). Re-exported from nt35510.
+pub use nt35510::PANEL_WIDTH as FB_WIDTH;
+
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
+
+pub trait DisplayFormat: Copy + 'static {
+    type Pixel: Copy;
+
+    type Color: RgbColor;
+
+    fn ltdc_pf() -> u8;
+
+    fn dsi_color_coding() -> u8;
+
+    fn nt35510_color_format() -> nt35510::ColorFormat;
+
+    fn bpp() -> usize;
+
+    fn encode(color: Self::Color) -> Self::Pixel;
+
+    fn black() -> Self::Pixel;
+
+    fn default_color() -> Self::Color;
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Argb8888;
+
+impl DisplayFormat for Argb8888 {
+    type Pixel = u32;
+    type Color = Rgb888;
+
+    fn ltdc_pf() -> u8 {
+        0
+    }
+
+    fn dsi_color_coding() -> u8 {
+        0x05
+    }
+
+    fn nt35510_color_format() -> nt35510::ColorFormat {
+        nt35510::ColorFormat::Rgb888
+    }
+
+    fn bpp() -> usize {
+        4
+    }
+
+    fn encode(color: Self::Color) -> Self::Pixel {
+        0xFF00_0000 | ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | (color.b() as u32)
+    }
+
+    fn black() -> Self::Pixel {
+        0xFF00_0000
+    }
+
+    fn default_color() -> Self::Color {
+        Rgb888::BLACK
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct Rgb565;
+
+impl DisplayFormat for Rgb565 {
+    type Pixel = u16;
+    type Color = EgRgb565;
+
+    fn ltdc_pf() -> u8 {
+        2
+    }
+
+    fn dsi_color_coding() -> u8 {
+        0x00
+    }
+
+    fn nt35510_color_format() -> nt35510::ColorFormat {
+        nt35510::ColorFormat::Rgb565
+    }
+
+    fn bpp() -> usize {
+        2
+    }
+
+    fn encode(color: Self::Color) -> Self::Pixel {
+        color.into_storage()
+    }
+
+    fn black() -> Self::Pixel {
+        0
+    }
+
+    fn default_color() -> Self::Color {
+        EgRgb565::BLACK
+    }
+}
 
 /// Errors that can occur during display initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -226,6 +324,11 @@ const DSI_LANE_BYTE_CLK_KHZ: u32 = 62_500;
 const LTDC_PIXEL_CLK_KHZ: u32 = 27_429;
 const TX_ESCAPE_CKDIV: u8 = (DSI_LANE_BYTE_CLK_KHZ / 15_620) as u8;
 
+// NOTE: These timing values differ from nt35510::PanelTiming::STANDARD_PORTRAIT
+// (V_SYNC=1, V_BACK_PORCH=15, V_FRONT_PORCH=16). The embassy BSP uses a
+// manual PLLSAI configuration producing ~54MHz pixel clock, which requires
+// larger vertical blanking intervals. These values are NOT interchangeable
+// with the standard timing — switching would break DSI/LTDC synchronization.
 const H_SYNC: u16 = 2;
 const H_BACK_PORCH: u16 = 34;
 const H_FRONT_PORCH: u16 = 34;
@@ -247,6 +350,7 @@ fn scaled_dsi_cycles(pixels: u16) -> u16 {
 fn configure_dsi_host(
     dsi: &mut dsihost::DsiHost<'_, peripherals::DSIHOST>,
     orientation: DisplayOrientation,
+    color_coding: u8,
 ) -> Result<(), DisplayInitError> {
     dsi.disable_wrapper_dsi();
     dsi.disable();
@@ -326,15 +430,12 @@ fn configure_dsi_host(
         return Err(DisplayInitError::DsiTimeout);
     }
 
-    const DSI_PIXEL_FORMAT_RGB888: u8 = 0x05;
-    const COLOR_CODING: u8 = DSI_PIXEL_FORMAT_RGB888;
     const VS_POLARITY: bool = false;
     const HS_POLARITY: bool = false;
     const DE_POLARITY: bool = false;
     const MODE: u8 = 2;
     const NULL_PACKET_SIZE: u16 = 0x0FFF;
     const NUMBER_OF_CHUNKS: u16 = 0;
-    const PACKET_SIZE_BASE: u16 = 480;
     const LP_COMMAND_ENABLE: bool = true;
     const LP_LARGEST_PACKET_SIZE: u8 = 16;
     const LPVACT_LARGEST_PACKET_SIZE: u8 = 0;
@@ -378,7 +479,7 @@ fn configure_dsi_host(
     DSIHOST.wcfgr().modify(|w| w.set_dsim(false));
 
     DSIHOST.vmcr().modify(|w| w.set_vmt(MODE));
-    DSIHOST.vpcr().modify(|w| w.set_vpsize(PACKET_SIZE_BASE));
+    DSIHOST.vpcr().modify(|w| w.set_vpsize(fb_width));
     DSIHOST.vccr().modify(|w| w.set_numc(NUMBER_OF_CHUNKS));
     DSIHOST.vnpcr().modify(|w| w.set_npsize(NULL_PACKET_SIZE));
     DSIHOST.lvcidr().modify(|w| w.set_vcid(0));
@@ -389,8 +490,8 @@ fn configure_dsi_host(
         w.set_vsp(VS_POLARITY);
     });
 
-    DSIHOST.lcolcr().modify(|w| w.set_colc(COLOR_CODING));
-    DSIHOST.wcfgr().modify(|w| w.set_colmux(COLOR_CODING));
+    DSIHOST.lcolcr().modify(|w| w.set_colc(color_coding));
+    DSIHOST.wcfgr().modify(|w| w.set_colmux(color_coding));
 
     DSIHOST
         .vhsacr()
@@ -523,7 +624,7 @@ fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>, orientation: DisplayOr
     ltdc.enable();
 }
 
-fn configure_ltdc_layer(
+fn configure_ltdc_layer<F: DisplayFormat>(
     _ltdc: &mut Ltdc<'_, peripherals::LTDC>,
     fb_addr: u32,
     orientation: DisplayOrientation,
@@ -534,7 +635,15 @@ fn configure_ltdc_layer(
     let window_y1 = orientation.height();
     const ALPHA: u8 = 255;
     const ALPHA0: u8 = 0;
-    const PIXEL_SIZE: u8 = 4u8;
+    let pixel_format = match F::ltdc_pf() {
+        0 => Pf::ARGB8888,
+        1 => Pf::RGB888,
+        2 => Pf::RGB565,
+        3 => Pf::ARGB1555,
+        4 => Pf::ARGB4444,
+        _ => Pf::ARGB8888,
+    };
+    let pixel_size = F::bpp() as u16;
 
     LTDC.layer(0).whpcr().write(|w| {
         w.set_whstpos(LTDC.bpcr().read().ahbp() + 1);
@@ -544,7 +653,7 @@ fn configure_ltdc_layer(
         w.set_wvstpos(LTDC.bpcr().read().avbp() + 1);
         w.set_wvsppos(LTDC.bpcr().read().avbp() + window_y1);
     });
-    LTDC.layer(0).pfcr().write(|w| w.set_pf(Pf::ARGB8888));
+    LTDC.layer(0).pfcr().write(|w| w.set_pf(pixel_format));
     LTDC.layer(0).dccr().modify(|w| {
         w.set_dcblue(0);
         w.set_dcgreen(0);
@@ -558,8 +667,8 @@ fn configure_ltdc_layer(
     });
     LTDC.layer(0).cfbar().write(|w| w.set_cfbadd(fb_addr));
     LTDC.layer(0).cfblr().write(|w| {
-        w.set_cfbp(window_x1 * PIXEL_SIZE as u16);
-        w.set_cfbll((window_x1 * PIXEL_SIZE as u16) + 3);
+        w.set_cfbp(window_x1 * pixel_size);
+        w.set_cfbll((window_x1 * pixel_size) + 3);
     });
     LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(window_y1));
     LTDC.layer(0).cr().modify(|w| w.set_len(true));
@@ -757,11 +866,144 @@ pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdControl
 
 // ── Display init (orchestrator) ────────────────────────────────────────
 
-pub struct DisplayCtrl<'d> {
-    framebuffer: &'static mut [u32],
+pub struct DisplayCtrl<'d, F: DisplayFormat = Argb8888> {
+    framebuffer: &'static mut [F::Pixel],
     _ltdc: Ltdc<'d, peripherals::LTDC>,
     dsi: dsihost::DsiHost<'d, peripherals::DSIHOST>,
     orientation: DisplayOrientation,
+    _format: core::marker::PhantomData<F>,
+}
+
+impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
+    fn try_new_internal(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Result<Self, DisplayInitError> {
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: enter");
+
+        let mut reset_pin = embassy_stm32::gpio::Output::new(
+            lcd_reset,
+            embassy_stm32::gpio::Level::Low,
+            embassy_stm32::gpio::Speed::Low,
+        );
+        BusyDelay.delay_ms(20);
+        reset_pin.set_high();
+        BusyDelay.delay_ms(140);
+        core::mem::forget(reset_pin);
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: LCD reset done");
+
+        let mut ltdc = Ltdc::new(ltdc);
+        let mut dsi = dsihost::DsiHost::new(dsi_host, dsi_te);
+        configure_dsi_host(&mut dsi, orientation, F::dsi_color_coding())?;
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: dsi init done (not yet enabled)");
+
+        let fb_slice: &'static mut [F::Pixel] = sdram.subslice_mut(0, orientation.fb_size());
+        let fb_addr = fb_slice.as_mut_ptr() as u32;
+        configure_ltdc(&mut ltdc, orientation);
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: ltdc init done");
+
+        dsi.enable();
+        dsi.enable_wrapper_dsi();
+        block_for(Duration::from_millis(120));
+
+        let controller = match hint {
+            BoardHint::ForceOtm8009a => LcdController::Otm8009a,
+            _ => LcdController::Nt35510,
+        };
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: detect_panel done");
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: GCR before panel = {:08x}", LTDC.twcr().read().0);
+
+        match controller {
+            LcdController::Nt35510 => {
+                BusyDelay.delay_ms(120);
+                #[cfg(feature = "defmt")]
+                defmt::info!("DC::new: starting NT35510 init via nt35510 crate");
+
+                let mut panel = Nt35510::new();
+                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
+                let mut delay = BusyDelay;
+                let config = nt35510::Nt35510Config {
+                    mode: orientation.nt35510_mode(),
+                    color_map: nt35510::ColorMap::Rgb,
+                    color_format: F::nt35510_color_format(),
+                    cols: FB_WIDTH,
+                    rows: FB_HEIGHT,
+                };
+                panel
+                    .init_with_config(&mut dsi_adapter, &mut delay, config)
+                    .map_err(|_| DisplayInitError::PanelInit)?;
+
+                #[cfg(feature = "defmt")]
+                defmt::info!("DC::new: NT35510 init done");
+            }
+            #[cfg(feature = "display")]
+            LcdController::Otm8009a => {
+                use otm8009a::{ColorMap, FrameRate, Mode, Otm8009AConfig};
+
+                BusyDelay.delay_ms(120);
+                let mut panel = Otm8009A::new();
+                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
+                let mut delay = DelayMsAdapter;
+                let config = Otm8009AConfig {
+                    frame_rate: FrameRate::_60Hz,
+                    mode: Mode::Landscape,
+                    color_map: ColorMap::Rgb,
+                    cols: FB_WIDTH,
+                    rows: FB_HEIGHT,
+                };
+                panel
+                    .init(&mut dsi_adapter, config, &mut delay)
+                    .map_err(|_| DisplayInitError::PanelInit)?;
+            }
+        }
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: GCR={:08x}", LTDC.twcr().read().0);
+
+        configure_ltdc_layer::<F>(&mut ltdc, fb_addr, orientation);
+
+        #[cfg(feature = "defmt")]
+        defmt::info!("DC::new: layer config done");
+
+        Ok(DisplayCtrl {
+            framebuffer: fb_slice,
+            _ltdc: ltdc,
+            dsi,
+            orientation,
+            _format: core::marker::PhantomData,
+        })
+    }
+
+    #[must_use]
+    pub fn fb(&mut self) -> FramebufferView<'_, F> {
+        FramebufferView {
+            buffer: self.framebuffer,
+            width: self.orientation.width() as usize,
+            height: self.orientation.height() as usize,
+        }
+    }
+    pub fn dsi(&mut self) -> &mut dsihost::DsiHost<'d, peripherals::DSIHOST> {
+        &mut self.dsi
+    }
+    pub fn orientation(&self) -> DisplayOrientation {
+        self.orientation
+    }
 }
 
 impl<'d> DisplayCtrl<'d> {
@@ -817,148 +1059,140 @@ impl<'d> DisplayCtrl<'d> {
         hint: BoardHint,
         orientation: DisplayOrientation,
     ) -> Result<Self, DisplayInitError> {
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: enter");
-
-        let mut reset_pin = embassy_stm32::gpio::Output::new(
+        DisplayCtrl::<'d, Argb8888>::try_new_internal(
+            sdram,
+            ltdc,
+            dsi_host,
+            dsi_te,
             lcd_reset,
-            embassy_stm32::gpio::Level::Low,
-            embassy_stm32::gpio::Speed::Low,
-        );
-        BusyDelay.delay_ms(20);
-        reset_pin.set_high();
-        BusyDelay.delay_ms(140);
-        core::mem::forget(reset_pin);
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: LCD reset done");
-
-        let mut ltdc = Ltdc::new(ltdc);
-        let mut dsi = dsihost::DsiHost::new(dsi_host, dsi_te);
-        configure_dsi_host(&mut dsi, orientation)?;
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: dsi init done (not yet enabled)");
-
-        let fb_slice: &'static mut [u32] = sdram.subslice_mut(0, orientation.fb_size());
-        let fb_addr = fb_slice.as_mut_ptr() as u32;
-        configure_ltdc(&mut ltdc, orientation);
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: ltdc init done");
-
-        dsi.enable();
-        dsi.enable_wrapper_dsi();
-        block_for(Duration::from_millis(120));
-
-        let controller = match hint {
-            BoardHint::ForceOtm8009a => LcdController::Otm8009a,
-            _ => LcdController::Nt35510,
-        };
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: detect_panel done");
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: GCR before panel = {:08x}", LTDC.twcr().read().0);
-
-        match controller {
-            LcdController::Nt35510 => {
-                BusyDelay.delay_ms(120);
-                #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: starting NT35510 init via nt35510 crate");
-
-                let mut panel = Nt35510::new();
-                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
-                let mut delay = BusyDelay;
-                let config = nt35510::Nt35510Config {
-                    mode: orientation.nt35510_mode(),
-                    color_map: nt35510::ColorMap::Rgb,
-                    color_format: nt35510::ColorFormat::Rgb888,
-                    cols: FB_WIDTH,
-                    rows: FB_HEIGHT,
-                };
-                panel
-                    .init_with_config(&mut dsi_adapter, &mut delay, config)
-                    .map_err(|_| DisplayInitError::PanelInit)?;
-
-                #[cfg(feature = "defmt")]
-                defmt::info!("DC::new: NT35510 init done");
-            }
-            #[cfg(feature = "display")]
-            LcdController::Otm8009a => {
-                use otm8009a::{ColorMap, FrameRate, Mode, Otm8009AConfig};
-
-                BusyDelay.delay_ms(120);
-                let mut panel = Otm8009A::new();
-                let mut dsi_adapter = DsiHostAdapter::new(&mut dsi);
-                let mut delay = DelayMsAdapter;
-                let config = Otm8009AConfig {
-                    frame_rate: FrameRate::_60Hz,
-                    mode: Mode::Landscape,
-                    color_map: ColorMap::Rgb,
-                    cols: FB_WIDTH,
-                    rows: FB_HEIGHT,
-                };
-                panel
-                    .init(&mut dsi_adapter, config, &mut delay)
-                    .map_err(|_| DisplayInitError::PanelInit)?;
-            }
-        }
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: GCR={:08x}", LTDC.twcr().read().0);
-
-        configure_ltdc_layer(&mut ltdc, fb_addr, orientation);
-
-        #[cfg(feature = "defmt")]
-        defmt::info!("DC::new: layer config done");
-
-        Ok(DisplayCtrl {
-            framebuffer: fb_slice,
-            _ltdc: ltdc,
-            dsi,
+            hint,
             orientation,
-        })
-    }
-
-    #[must_use]
-    pub fn fb(&mut self) -> FramebufferView<'_> {
-        FramebufferView {
-            buffer: self.framebuffer,
-            width: self.orientation.width() as usize,
-            height: self.orientation.height() as usize,
-        }
-    }
-    pub fn dsi(&mut self) -> &mut dsihost::DsiHost<'d, peripherals::DSIHOST> {
-        &mut self.dsi
-    }
-    pub fn orientation(&self) -> DisplayOrientation {
-        self.orientation
+        )
     }
 }
 
-pub struct FramebufferView<'a> {
-    buffer: &'a mut [u32],
+pub trait DisplayCtrlCtor<'d>: Sized {
+    fn new(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+    ) -> Self;
+
+    fn try_new(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+    ) -> Result<Self, DisplayInitError>;
+
+    fn new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Self;
+
+    fn try_new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Result<Self, DisplayInitError>;
+}
+
+impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
+    fn new(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+    ) -> Self {
+        Self::try_new(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint).expect("display init failed")
+    }
+
+    fn try_new(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+    ) -> Result<Self, DisplayInitError> {
+        Self::try_new_with_orientation(
+            sdram,
+            ltdc,
+            dsi_host,
+            dsi_te,
+            lcd_reset,
+            hint,
+            DisplayOrientation::Portrait,
+        )
+    }
+
+    fn new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Self {
+        Self::try_new_with_orientation(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint, orientation)
+            .expect("display init failed")
+    }
+
+    fn try_new_with_orientation(
+        sdram: &SdramCtrl,
+        ltdc: Peri<'d, peripherals::LTDC>,
+        dsi_host: Peri<'d, peripherals::DSIHOST>,
+        dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
+        lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
+        hint: BoardHint,
+        orientation: DisplayOrientation,
+    ) -> Result<Self, DisplayInitError> {
+        DisplayCtrl::<'d, Rgb565>::try_new_internal(
+            sdram,
+            ltdc,
+            dsi_host,
+            dsi_te,
+            lcd_reset,
+            hint,
+            orientation,
+        )
+    }
+}
+
+pub struct FramebufferView<'a, F: DisplayFormat = Argb8888> {
+    buffer: &'a mut [F::Pixel],
     width: usize,
     height: usize,
 }
 
-impl<'a> FramebufferView<'a> {
-    fn encode(color: Rgb888) -> u32 {
-        0xFF00_0000 | ((color.r() as u32) << 16) | ((color.g() as u32) << 8) | (color.b() as u32)
-    }
-
-    pub fn clear(&mut self, color: Rgb888) {
-        let raw = Self::encode(color);
+impl<F: DisplayFormat> FramebufferView<'_, F> {
+    pub fn clear(&mut self, color: F::Color) {
+        let raw = F::encode(color);
         for pixel in self.buffer.iter_mut() {
             *pixel = raw;
         }
     }
 }
 
-impl<'a> DrawTarget for FramebufferView<'a> {
-    type Color = Rgb888;
+impl<F: DisplayFormat> DrawTarget for FramebufferView<'_, F> {
+    type Color = F::Color;
     type Error = core::convert::Infallible;
 
     fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
@@ -969,7 +1203,7 @@ impl<'a> DrawTarget for FramebufferView<'a> {
             let x = pixel.0.x as usize;
             let y = pixel.0.y as usize;
             if x < self.width && y < self.height {
-                self.buffer[y * self.width + x] = Self::encode(pixel.1);
+                self.buffer[y * self.width + x] = F::encode(pixel.1);
             }
         }
         Ok(())
@@ -979,29 +1213,31 @@ impl<'a> DrawTarget for FramebufferView<'a> {
     where
         I: IntoIterator<Item = Self::Color>,
     {
-        let top = area.top_left.y.max(0) as usize;
-        let bottom = (area.top_left.y + area.size.height as i32).min(self.height as i32) as usize;
-        let left = area.top_left.x.max(0) as usize;
-        let right = (area.top_left.x + area.size.width as i32).min(self.width as i32) as usize;
+        let mut colors = color.into_iter();
+        let area_width = area.size.width as i32;
+        let area_height = area.size.height as i32;
 
-        let flat_color = color.into_iter().next().unwrap_or(Rgb888::BLACK);
-        let raw = Self::encode(flat_color);
+        for dy in 0..area_height {
+            for dx in 0..area_width {
+                let raw = F::encode(colors.next().unwrap_or_else(F::default_color));
+                let x = area.top_left.x + dx;
+                let y = area.top_left.y + dy;
 
-        for y in top..bottom {
-            for x in left..right {
-                self.buffer[y * self.width + x] = raw;
+                if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
+                    self.buffer[y as usize * self.width + x as usize] = raw;
+                }
             }
         }
         Ok(())
     }
 
     fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
-        self.clear(color);
+        FramebufferView::clear(self, color);
         Ok(())
     }
 }
 
-impl<'a> OriginDimensions for FramebufferView<'a> {
+impl<F: DisplayFormat> OriginDimensions for FramebufferView<'_, F> {
     fn size(&self) -> Size {
         Size::new(self.width as u32, self.height as u32)
     }
