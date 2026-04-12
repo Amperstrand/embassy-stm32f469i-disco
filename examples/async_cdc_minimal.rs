@@ -1,3 +1,4 @@
+//! Minimal USB CDC echo example without defmt (production-safe).
 #![no_main]
 #![no_std]
 

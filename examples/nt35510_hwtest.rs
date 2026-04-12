@@ -1,3 +1,4 @@
+//! NT35510 panel hardware diagnostic: register reads, ID verification, DSI command tests.
 #![no_std]
 #![no_main]
 

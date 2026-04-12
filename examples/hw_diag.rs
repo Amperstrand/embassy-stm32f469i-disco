@@ -1,3 +1,4 @@
+//! Comprehensive on-screen hardware diagnostic: SDRAM, display, touch, USB.
 #![no_std]
 #![no_main]
 

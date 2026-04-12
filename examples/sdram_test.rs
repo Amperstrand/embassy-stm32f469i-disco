@@ -1,3 +1,4 @@
+//! SDRAM initialization and memory test using SdramCtrl BSP API.
 #![no_std]
 #![no_main]
 

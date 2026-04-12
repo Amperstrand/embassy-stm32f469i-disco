@@ -1,3 +1,4 @@
+//! USB CDC stress test: rapid bidirectional data transfer without defmt.
 #![no_std]
 #![no_main]
 
