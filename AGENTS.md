@@ -91,16 +91,17 @@ run_usb_cdc_test.sh          — st-flash based runner (USB CDC connectivity tes
 
 ## Clock Configurations
 
-| Config | Sysclk | 48MHz source | USB | RNG | Used by |
-|--------|--------|-------------|-----|-----|---------|
-| 180MHz | HSE/8 * 360 / 2 | None | NO | NO | SDRAM, display, touch, hw_diag |
-| 168MHz | HSE/4 * 168 / 2 | PLL1_Q/7 (48.0MHz) | YES | YES | micronuts firmware |
+Use [`config_180()`], [`config_168()`], or [`config_usb_only()`] from `src/clock.rs` — do not manually configure PLL/PLLSAI.
 
-The 180MHz PLL config cannot produce 48MHz — PLL1_Q=360/7=51.4MHz (out of USB 0.25% tolerance).
-PLLSAI_Q could theoretically provide 48MHz (384/8), but embassy's `init_pll()` zeros
-PLLSAIM on STM32F469 (uses `.write()` instead of `.modify()`), making the VCO input
-undefined. This is an embassy bug. The micronuts firmware solves coexistence by running at
-168MHz with PLL1_Q=48MHz exact.
+| Config | Sysclk | 48MHz source | USB | RNG | Display | Used by |
+|--------|--------|-------------|-----|-----|---------|---------|
+| 180MHz | HSE/8 * 360 / 2 | PLLSAI_Q (384/8=48MHz) | YES | YES | PLLSAI_R=54.86MHz | Full-featured firmware |
+| 168MHz | HSE/4 * 168 / 2 | PLL1_Q (168/7=48MHz) | YES | YES | PLLSAI_R=54.86MHz | USB+display, simpler clock |
+| USB-only | 168MHz | PLL1_Q | YES | YES | NO | USB CDC without display |
+
+**Hardware-verified** (2026-05-07, issue #27): At 180MHz, PLLSAI_Q provides 48MHz via `divq: DIV8`.
+`clk48sel = PLLSAI1_Q` routes this to USB/RNG. Embassy writes CK48MSEL to DCKCFGR (correct register).
+DCKCFGR2 does not exist on STM32F469 — the "DCKCFGR2 workaround" was a harmless no-op.
 
 ## Test Output Format
 
@@ -235,7 +236,7 @@ The STM32F469 clock tree has a non-obvious constraint: **no single PLL config pr
 
 **This issue has been rediscovered independently in at least 4 projects** (gm65-scanner, micronuts, microfips, this BSP). The BSP's own README previously stated "USB requires a separate config (incompatible with display)" — this is **incorrect**.
 
-**Two working solutions:**
+**Two working solutions** (both available as presets in `src/clock.rs`):
 
 | Config | SYSCLK | USB Clock | LTDC Pixel Clock | Used By |
 |--------|--------|-----------|-----------------|---------|
@@ -244,12 +245,13 @@ The STM32F469 clock tree has a non-obvious constraint: **no single PLL config pr
 
 **~~embassy-stm32 register bug~~ (CORRECTED — see #27):** We previously claimed embassy writes `clk48sel` to the wrong register (`RCC.DCKCFGR` instead of `RCC.DCKCFGR2`). This is **incorrect**. DCKCFGR2 does not exist on STM32F469 — the register at offset 0x94 reads back 0 after write. CK48MSEL is correctly in DCKCFGR bit 27, and embassy writes to the right register. Hardware testing (test_clk48_hypothesis, conditions A-D, 2026-05-07) confirmed: RNG passes in all conditions, DCKCFGR2 writes never stick. The "DCKCFGR2 workaround" was always a no-op.
 
-**sync HAL bug:** `stm32f4xx-hal`'s `DisplayController::new()` uses `.write()` on PLLSAICFGR, destroying PLLSAI_P and PLLSAI_Q. The embassy BSP avoids this by configuring PLLSAI through `config.rcc.pllsai`. See gm65-scanner#47.
+**sync HAL bug (still valid):** `stm32f4xx-hal`'s `DisplayController::new()` uses `.write()` on PLLSAICFGR, destroying PLLSAI_P and PLLSAI_Q. The embassy BSP avoids this by configuring PLLSAI through `config.rcc.pllsai`. See gm65-scanner#47.
 
 **Issue chain:**
 - embassy-stm32f469i-disco#1, #25 — PLLSAI not configured (display crashes)
 - embassy-stm32f469i-disco#13, #14 — 48MHz clock at 180MHz (definitive workaround)
-- gm65-scanner#23 — ~~embassy DCKCFGR vs DCKCFGR2 register bug~~ (see #27: DCKCFGR2 does not exist on F469)
+- embassy-stm32f469i-disco#27 — DCKCFGR2 claim disproven by hardware test (48MHz comes from PLLSAI_Q)
+- gm65-scanner#23 — DCKCFGR2 workaround was a no-op (corrected in comment)
 - gm65-scanner#47, #50 — sync HAL PLLSAI destruction + ARGB8888 column shift
 
 ### FT6X06 Phantom Touch Events (#17 on stm32f469i-disc, fixed in firmware)
@@ -303,6 +305,77 @@ PR #5738 claimed `configure_endpoints()` setting SNAK on IN endpoints causes USB
 - **PR was closed without merging** (2026-03-26)
 
 We concluded the claimed EPENA hang may be timing-dependent or caused by probe-rs artifacts. Our hardware does not reproduce it.
+
+## Cross-Project Recurring Patterns
+
+Patterns that have recurred across Amperstrand STM32F469 projects. Each was independently rediscovered at least twice.
+
+### USB CDC + probe-rs Interference (4+ projects)
+
+When `probe-rs run` is attached for RTT logging, RTT may be left in blocking mode on disconnect. Any `defmt::info!()` call acquires a critical section and blocks the USB ISR, causing disconnects.
+
+**Affected:** gm65-scanner#39, micronuts#18/#19, microfips#2/#3, embassy BSP (probe-rs breaks USB)
+**Fix:** Use `st-flash` for USB firmware deployment. Never `probe-rs run` during USB testing.
+**Reference:** embassy BSP Known Issues, gm65-scanner#19
+
+### FT6X06 Phantom Touch Events (3 projects)
+
+FT6X06 reports phantom touches at screen edges (x=0, y=445, x=479, y=767). Electrical noise on capacitive sensor.
+
+**Affected:** embassy BSP#16, stm32f469i-disc#17, gm65-scanner (touch integration)
+**Fix:** Filter with 3px margin: `if x < 3 || x > 476 || y < 3 || y > 796 { return None; }`
+**Reference:** stm32f469i-disc#17
+
+### DSI Command-Mode Reads Fail (2 BSPs)
+
+DSI reads (for panel auto-detection) fail with BTA/PHY timing issues. Writes work fine.
+
+**Affected:** embassy BSP#15, stm32f469i-disc#12
+**Fix:** Use `BoardHint::ForceNt35510` to skip probe. Don't rely on DSI reads.
+**Reference:** stm32f469i-disc#12
+
+### memory.x Wrong Flash/RAM Sizes (3 projects)
+
+STM32F469NIHx has 2048K flash and 320K SRAM (not 384K, not 1024K). Wrong values cause crashes.
+
+**Affected:** embassy BSP#2 (384K→320K), embassy BSP#19 (1024K→2048K), micronuts#5 (heap overlap)
+**Fix:** Use BSP-provided memory.x. Verify against datasheet.
+
+### defmt Feature Leak in Embassy Deps (2 projects)
+
+`defmt` compiled unconditionally into embassy deps breaks USB CDC. Must be feature-gated.
+
+**Affected:** stm32f469i-disc#23, microfips#36
+**Fix:** Ensure `defmt` is behind a feature flag in all embassy dependency declarations.
+
+### ST-LINK / SWD Lockout Recovery (3 projects)
+
+USB or SDRAM active can lock out SWD. Universal fix: `st-flash --connect-under-reset reset`.
+
+**Affected:** embassy BSP, gm65-scanner, micronuts
+**Fix:** `st-flash --connect-under-reset reset`, then immediately run probe-rs. Full power cycle if needed.
+
+### Scanner UART Pitfalls (gm65-scanner, micronuts)
+
+- `drain_uart()` inside `send_command()` destroys queued scan data (gm65-scanner#12)
+- `AsyncUart::read` silently retries on framing/overrun errors (gm65-scanner#54)
+- Baud-upgrade path leaves scanner unusable (micronuts#8)
+
+**Fix:** Don't drain UART before reading scan data. Handle framing errors explicitly. Re-init scanner after baud change.
+
+### Simulator SIGSEGV on NVIDIA + SDL2 (2 projects)
+
+Desktop simulator crashes on NVIDIA GPU setups with SDL2.
+
+**Affected:** micronuts#4, specter-diy#16
+**Fix:** Use software renderer or run on non-NVIDIA hardware for simulator testing.
+
+### USB OTG FS Re-enumeration After Soft Reset (2 projects)
+
+`st-flash` soft reset doesn't properly reset USB PHY. Device doesn't re-enumerate.
+
+**Affected:** micronuts#34, microfips#105
+**Fix:** Full power cycle, or explicit USB PHY reset sequence in firmware.
 
 ## Pin Consumption
 

@@ -7,7 +7,7 @@
 //!
 //! | Preset | Sysclk | USB/RNG | Display | Use case |
 //! |--------|--------|---------|---------|----------|
-//! | [`config_180`] | 180 MHz | 48 MHz via PLLSAI_P | 54.86 MHz LTDC | Full speed, all peripherals |
+//! | [`config_180`] | 180 MHz | 48 MHz via PLLSAI_Q | 54.86 MHz LTDC | Full speed, all peripherals |
 //! | [`config_168`] | 168 MHz | 48 MHz via PLL1_Q | 54.86 MHz LTDC | USB+display, simpler clock |
 //! | [`config_usb_only`] | 168 MHz | 48 MHz via PLL1_Q | unavailable | USB CDC without display |
 //!
@@ -21,11 +21,15 @@
 //! # 48MHz clock background
 //!
 //! USB OTG FS and RNG both require 48MHz ±0.25%. At 180MHz sysclk, PLL1_Q
-//! produces 51.4MHz (unusable). PLLSAI provides 48MHz via PLLSAI_P = VCO/8.
-//! The CK48MSEL mux (DCKCFGR bit 27) selects between PLL1_Q and PLLSAI as
+//! produces 51.4MHz (unusable). PLLSAI provides 48MHz via **PLLSAI_Q** (VCO/8).
+//! The CK48MSEL mux (DCKCFGR bit 27) selects between PLL1_Q and PLLSAI_Q as
 //! the 48MHz source. Embassy writes this to DCKCFGR, which is the correct
-//! register for STM32F469 (DCKCFGR2 does not exist on this MCU — see
-//! issue #27).
+//! register for STM32F469 (DCKCFGR2 does not exist on this MCU — see issue #27).
+//!
+//! **Hardware-verified** (2026-05-07): RNG passes at 180MHz with `clk48sel =
+//! PLLSAI1_Q` and `divq: DIV8`. PLLSAI_P (`divp`) does not affect the 48MHz
+//! path — only PLLSAI_Q matters. The DCKCFGR2 "workaround" in some downstream
+//! projects was a no-op (register doesn't exist on F469).
 
 use embassy_stm32::rcc::*;
 use embassy_stm32::time::Hertz;
@@ -34,7 +38,7 @@ use embassy_stm32::Config;
 pub const SYSCLK_HZ_180: u32 = 180_000_000;
 pub const SYSCLK_HZ_168: u32 = 168_000_000;
 
-/// 180 MHz sysclk + 48 MHz USB/RNG via PLLSAI_P + 54.86 MHz LTDC via PLLSAI_R.
+/// 180 MHz sysclk + 48 MHz USB/RNG via PLLSAI_Q + 54.86 MHz LTDC via PLLSAI_R.
 ///
 /// All peripherals work simultaneously. Recommended for full-featured firmware.
 ///
