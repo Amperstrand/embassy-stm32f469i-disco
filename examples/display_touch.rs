@@ -4,12 +4,7 @@
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_stm32::i2c;
-use embassy_stm32::rcc::{
-    mux, AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv,
-    PllRDiv, PllSource, Sysclk,
-};
-use embassy_stm32::time::mhz;
-use embassy_stm32f469i_disco::{display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl};
+use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, BoardHint, DisplayCtrl, SYSCLK_HZ_180, TouchCtrl};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
@@ -34,36 +29,10 @@ const POLL_MS: u32 = 50;
 async fn main(_spawner: Spawner) {
     info!("display_touch: init...");
 
-    let mut config = embassy_stm32::Config::default();
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-    config.rcc.hse = Some(Hse {
-        freq: mhz(8),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: Some(PllRDiv::DIV6),
-    });
-    config.rcc.pllsai = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL384,
-        divp: None,
-        divq: Some(PllQDiv::DIV8),
-        divr: Some(PllRDiv::DIV7),
-    });
-    config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
-
-    let mut p = embassy_stm32::init(config);
+    let mut p = embassy_stm32::init(config_180());
 
     info!("display_touch: init SDRAM...");
-    let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
 
     info!("display_touch: init display...");
     let mut display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);

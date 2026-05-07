@@ -23,11 +23,7 @@ use embassy_executor::Spawner;
 use embassy_stm32::dsihost::DsiHost;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
-use embassy_stm32::rcc::{
-    AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv, PllRDiv,
-    PllSource, Sysclk,
-};
-use embassy_stm32f469i_disco::display::SdramCtrl;
+use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use embassy_time::{Duration, Timer, block_for};
 use nt35510::Nt35510;
@@ -315,35 +311,10 @@ impl embedded_hal_02::blocking::delay::DelayMs<u32> for BusyDelay {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut config = embassy_stm32::Config::default();
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-    config.rcc.hse = Some(Hse {
-        freq: embassy_stm32::time::mhz(8),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: Some(PllRDiv::DIV6),
-    });
-    config.rcc.pllsai = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL384,
-        divp: None,
-        divq: None,
-        divr: Some(PllRDiv::DIV7),
-    });
-
-    let mut p = embassy_stm32::init(config);
+    let mut p = embassy_stm32::init(config_180());
     info!("embassy_display_bsp_minimal: start");
 
-    let sdram = SdramCtrl::new(&mut p, 168_000_000);
+    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
     let mut led_green = Output::new(p.PG6, Level::High, Speed::Low);
     let mut led_orange = Output::new(p.PD4, Level::High, Speed::Low);
     let mut led_red = Output::new(p.PD5, Level::High, Speed::Low);

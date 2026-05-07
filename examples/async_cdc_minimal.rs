@@ -17,15 +17,14 @@ mod defmt_stubs {
 }
 
 use embassy_executor::Spawner;
-use embassy_stm32::time::Hertz;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::{interrupt::InterruptExt, peripherals, rcc::*, usb, Config};
+use embassy_stm32::{interrupt::InterruptExt, peripherals, usb};
 use embassy_stm32::bind_interrupts;
 use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::Builder;
 
-use embassy_stm32f469i_disco::display::SdramCtrl;
+use embassy_stm32f469i_disco::{config_168, display::SdramCtrl, SYSCLK_HZ_168};
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -43,34 +42,7 @@ async fn main(_spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, 64 * 1024);
     }
 
-    let mut config = Config::default();
-    {
-        config.rcc.hse = Some(Hse {
-            freq: Hertz(8_000_000),
-            mode: HseMode::Oscillator,
-        });
-        config.rcc.pll_src = PllSource::HSE;
-        config.rcc.pll = Some(Pll {
-            prediv: PllPreDiv::DIV4,
-            mul: PllMul::MUL168,
-            divp: Some(PllPDiv::DIV2),
-            divq: Some(PllQDiv::DIV7),
-            divr: None,
-        });
-        config.rcc.ahb_pre = AHBPrescaler::DIV1;
-        config.rcc.apb1_pre = APBPrescaler::DIV4;
-        config.rcc.apb2_pre = APBPrescaler::DIV2;
-        config.rcc.sys = Sysclk::PLL1_P;
-        config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
-        config.rcc.pllsai = Some(Pll {
-            prediv: PllPreDiv::DIV8,
-            mul: PllMul::MUL384,
-            divp: None,
-            divq: Some(PllQDiv::DIV8),
-            divr: Some(PllRDiv::DIV7),
-        });
-    }
-    let mut p = embassy_stm32::init(config);
+    let mut p = embassy_stm32::init(config_168());
 
     // USB PHY reset: after st-flash SYSRESETREQ, the USB OTG FS PHY retains
     // stale state and won't re-enumerate. Cycling the RCC clock + core soft
@@ -110,7 +82,7 @@ async fn main(_spawner: Spawner) {
         }
     }
 
-    let sdram = SdramCtrl::new(&mut p, 168_000_000);
+    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_168);
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
 

@@ -7,10 +7,8 @@ extern crate panic_probe;
 
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::i2c;
-use embassy_stm32::rcc::*;
-use embassy_stm32::Config;
 use embassy_stm32f469i_disco::{
-    display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
+    config_180, display::SdramCtrl, SYSCLK_HZ_180, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
 };
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -243,33 +241,7 @@ fn draw_summary(
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let mut config = Config::default();
-    config.rcc.hse = Some(Hse {
-        freq: embassy_stm32::time::mhz(8),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: Some(PllRDiv::DIV6),
-    });
-    config.rcc.pllsai = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL384,
-        divp: None,
-        divq: Some(PllQDiv::DIV8),
-        divr: Some(PllRDiv::DIV7),
-    });
-    config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-
-    let p = embassy_stm32::init(config);
+    let p = embassy_stm32::init(config_180());
 
     defmt::info!("=== Hardware Diagnostics v0.2.0 ===");
 
@@ -599,7 +571,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("SDRAM init...");
     let sdram = SdramCtrl::new(
         &mut unsafe { embassy_stm32::Peripherals::steal() },
-        180_000_000,
+        SYSCLK_HZ_180,
     );
     let base = sdram.base_address();
     let words = embassy_stm32f469i_disco::display::SDRAM_SIZE_BYTES / 4;

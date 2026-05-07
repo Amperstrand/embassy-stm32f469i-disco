@@ -5,14 +5,13 @@
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::rcc::*;
-use embassy_stm32::time::Hertz;
 use embassy_stm32::usb;
-use embassy_stm32::{peripherals, Config};
+use embassy_stm32::peripherals;
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::Builder;
+use embassy_stm32f469i_disco::config_usb_only;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -22,26 +21,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut config = Config::default();
-    config.rcc.hse = Some(Hse {
-        freq: Hertz(8_000_000),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV4,
-        mul: PllMul::MUL168,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: None,
-    });
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
-
-    let p = embassy_stm32::init(config);
+    let p = embassy_stm32::init(config_usb_only());
 
     let mut ep_out_buffer = [0u8; 1024];
     let mut usb_config = usb::Config::default();

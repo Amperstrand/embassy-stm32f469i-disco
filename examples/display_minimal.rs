@@ -21,11 +21,7 @@ use embassy_executor::Spawner;
 use embassy_stm32::dsihost::{DsiHost, PacketType};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
-use embassy_stm32::rcc::{
-    mux, AHBPrescaler, APBPrescaler, Hse, HseMode, Pll, PllMul, PllPDiv, PllPreDiv, PllQDiv, PllRDiv, PllSource, Sysclk,
-};
-use embassy_stm32::time::mhz;
-use embassy_stm32f469i_disco::display::SdramCtrl;
+use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
 use embassy_time::{Duration, Timer, block_for};
 use linked_list_allocator::LockedHeap;
 use stm32_metapac::dsihost::regs::{Ier0, Ier1};
@@ -103,42 +99,11 @@ const NT35510_RASET_PORTRAIT: &[u8] = &[NT35510_CMD_RASET, 0x00, 0x00, 0x03, 0x1
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    // ── Clock config: identical to verified working dsi_bsp.rs ──
-    let mut config = embassy_stm32::Config::default();
-    config.rcc.sys = Sysclk::PLL1_P;
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-
-    config.rcc.hse = Some(Hse {
-        freq: mhz(8),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: Some(PllRDiv::DIV6),
-    });
-
-    config.rcc.pllsai = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL384,
-        divp: None,
-        divq: Some(PllQDiv::DIV8), // 48MHz for USB/RNG (CK48SEL=PLLSAI1_Q)
-        divr: Some(PllRDiv::DIV7),
-    });
-
-    config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
-
-    let mut p = embassy_stm32::init(config);
+    let mut p = embassy_stm32::init(config_180());
     info!("display_minimal: starting (portrait 480x800)");
 
     // ── SDRAM init (must be before moving peripherals out of p) ──
-    let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
     info!("display_minimal: SDRAM initialized");
 
     // ── GPIO ──
