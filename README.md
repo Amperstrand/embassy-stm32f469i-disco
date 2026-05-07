@@ -126,14 +126,27 @@ if touch.td_status(&mut i2c).unwrap_or(0) > 0 {
 
 ### USB CDC
 
-USB requires a separate 84 MHz clock config (incompatible with display):
+USB and display can coexist with the correct clock configuration. Two options:
 
+**168 MHz (simplest, recommended):**
 ```rust
-config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV4, mul: PllMul::MUL168, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7) });
-config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q;
+config.rcc.hse = Some(Hse { freq: Hertz(8_000_000), mode: HseMode::Oscillator });
+config.rcc.pll_src = PllSource::HSE;
+config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL336, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: None });
+config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divp: None, divq: None, divr: Some(PllRDiv::DIV7) });
+config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q; // PLL_Q = 48 MHz at 168 MHz
 ```
 
-See `examples/test_usb_cdc.rs` for a complete test example, or `examples/test_usb_cdc_stress.rs` for a stress test.
+**180 MHz (full speed, requires DCKCFGR2 workaround):**
+```rust
+config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL360, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: Some(PllRDiv::DIV6) });
+config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divp: Some(PllPDiv::DIV8), divq: Some(PllQDiv::DIV8), divr: Some(PllRDiv::DIV7) });
+config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q; // PLLSAI_Q = 48 MHz
+// After embassy_stm32::init():
+stm32_metapac::RCC.dckcfgr2().modify(|w| { w.set_clk48sel(mux::Clk48sel::PLLSAI1_Q); });
+```
+
+See `examples/test_usb_cdc_stress.rs` for USB-only testing, or `Amperstrand/micronuts` for a working USB+display+touch firmware at 180 MHz.
 
 ## API
 
