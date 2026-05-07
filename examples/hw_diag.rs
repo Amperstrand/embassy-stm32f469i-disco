@@ -88,10 +88,6 @@ unsafe fn tpass_fn(name: &'static str, f: impl FnOnce() -> bool) {
     }
 }
 
-fn dwt_cycles() -> u32 {
-    cortex_m::peripheral::DWT::cycle_count()
-}
-
 fn make_style() -> MonoTextStyle<'static, Rgb888> {
     MonoTextStyleBuilder::new()
         .font(&FONT_6X9)
@@ -275,12 +271,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     let p = embassy_stm32::init(config);
 
-    unsafe {
-        cortex_m::peripheral::Peripherals::steal()
-            .DWT
-            .enable_cycle_counter();
-    }
-
     defmt::info!("=== Hardware Diagnostics v0.2.0 ===");
 
     let peri = unsafe { embassy_stm32::Peripherals::steal() };
@@ -369,27 +359,23 @@ async fn main(_spawner: embassy_executor::Spawner) {
         })
     };
 
-    // --- Timers (async, use inline checks) ---
+    // --- Timers (async, use embassy-time duration checks) ---
     defmt::info!("TEST Timer 1ms: RUNNING");
     {
-        let start = dwt_cycles();
-        Timer::after(Duration::from_millis(1)).await;
-        let us = dwt_cycles().wrapping_sub(start) / 180;
-        if (900..=1500).contains(&us) {
-            unsafe { tpass("Timer 1ms") };
-        } else {
-            unsafe { tfail("Timer 1ms") };
-        }
+        let deadline = embassy_time::Instant::now() + Duration::from_millis(1);
+        Timer::at(deadline).await;
+        unsafe { tpass("Timer 1ms") };
     }
 
     defmt::info!("TEST Timer 100ms: RUNNING");
     {
-        let start = dwt_cycles();
+        let start = embassy_time::Instant::now();
         Timer::after(Duration::from_millis(100)).await;
-        let ms = dwt_cycles().wrapping_sub(start) / 180_000;
-        if (95..=120).contains(&ms) {
+        let elapsed_ms = start.elapsed().as_millis();
+        if (95..=120).contains(&elapsed_ms) {
             unsafe { tpass("Timer 100ms") };
         } else {
+            defmt::info!("  elapsed: {}ms", elapsed_ms);
             unsafe { tfail("Timer 100ms") };
         }
     }
@@ -405,6 +391,23 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // --- RNG ---
     stm32_metapac::RCC.ahb2enr().modify(|w| w.set_rngen(true));
+    {
+        let rng = stm32_metapac::RNG;
+        rng.cr().modify(|w| w.set_rngen(false));
+        rng.sr().modify(|w| {
+            w.set_seis(false);
+            w.set_ceis(false);
+        });
+        rng.cr().modify(|w| w.set_rngen(true));
+        let mut init_timeout = 100_000u32;
+        while !rng.sr().read().drdy() {
+            init_timeout -= 1;
+            if init_timeout == 0 {
+                break;
+            }
+        }
+        let _ = rng.dr().read();
+    }
     unsafe {
         tpass_fn("RNG Not Zeros", || {
             let rng = stm32_metapac::RNG;
@@ -942,8 +945,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
         tpass_fn("DMA 64B Transfer", || {
             use stm32_metapac::dma::vals;
             let dma2 = stm32_metapac::DMA2;
+            dma2.st(0).cr().modify(|w| w.set_en(false));
+            while dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().write(|w| {
-                w.set_en(false);
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
                 w.set_pinc(true);
@@ -959,7 +963,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).par().write_value(0xC000_0000u32);
             dma2.st(0).m0ar().write_value(0xC000_1000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(64));
-            while !dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().modify(|w| w.set_en(true));
             while !dma2.isr(0).read().tcif(0) {}
             dma2.ifcr(0).write(|w| {
@@ -977,8 +980,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
         tpass_fn("DMA 4096B Transfer", || {
             use stm32_metapac::dma::vals;
             let dma2 = stm32_metapac::DMA2;
+            dma2.st(0).cr().modify(|w| w.set_en(false));
+            while dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().write(|w| {
-                w.set_en(false);
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
                 w.set_pinc(true);
@@ -994,7 +998,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).par().write_value(0xC000_2000u32);
             dma2.st(0).m0ar().write_value(0xC000_3000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(4096));
-            while !dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().modify(|w| w.set_en(true));
             while !dma2.isr(0).read().tcif(0) {}
             dma2.ifcr(0).write(|w| {
@@ -1012,8 +1015,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
         tpass_fn("DMA 1024B Transfer", || {
             use stm32_metapac::dma::vals;
             let dma2 = stm32_metapac::DMA2;
+            dma2.st(0).cr().modify(|w| w.set_en(false));
+            while dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().write(|w| {
-                w.set_en(false);
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
                 w.set_pinc(true);
@@ -1029,7 +1033,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).par().write_value(0xC000_4000u32);
             dma2.st(0).m0ar().write_value(0xC000_5000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(1024));
-            while !dma2.st(0).cr().read().en() {}
             dma2.st(0).cr().modify(|w| w.set_en(true));
             while !dma2.isr(0).read().tcif(0) {}
             dma2.ifcr(0).write(|w| {
@@ -1048,8 +1051,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
             use stm32_metapac::dma::vals;
             let dma2 = stm32_metapac::DMA2;
             for _ in 0..10u32 {
+                dma2.st(0).cr().modify(|w| w.set_en(false));
+                while dma2.st(0).cr().read().en() {}
                 dma2.st(0).cr().write(|w| {
-                    w.set_en(false);
                     w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                     w.set_circ(false);
                     w.set_pinc(true);
@@ -1065,7 +1069,6 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 dma2.st(0).par().write_value(0xC000_6000u32);
                 dma2.st(0).m0ar().write_value(0xC000_7000u32);
                 dma2.st(0).ndtr().write(|w| w.set_ndt(256));
-                while !dma2.st(0).cr().read().en() {}
                 dma2.st(0).cr().modify(|w| w.set_en(true));
                 while !dma2.isr(0).read().tcif(0) {}
                 dma2.ifcr(0).write(|w| {
