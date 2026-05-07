@@ -8,29 +8,24 @@
 //! # Quick start
 //!
 //! ```rust,ignore
-//! let p = embassy_stm32::init(embassy_stm32::Config::default());
-//! let mut led = embassy_stm32::gpio::Output::new(p.PG6, embassy_stm32::gpio::Level::Low, embassy_stm32::gpio::Speed::Low);
-//! loop {
-//!     Timer::after(embassy_time::Duration::from_secs(1)).await;
-//!     led.toggle();
-//! }
+//! let config = embassy_stm32f469i_disco::config_180();
+//! let p = embassy_stm32::init(config);
 //! ```
 //!
-//! # Display + SDRAM
+//! # Clock presets
 //!
-//! Display and SDRAM require a 180 MHz PLL configuration and `unsafe { Peripherals::steal() }`
-//! for pin reuse. See `examples/display_blinky.rs` for a complete working example.
-//!
-//! # USB CDC
-//!
-//! USB requires a separate 84 MHz clock config (incompatible with display).
-//! See `examples/test_usb_cdc.rs` for a complete test example.
+//! Use [`config_180`], [`config_168`], or [`config_usb_only`] instead of manually
+//! configuring PLL/PLLSAI. See [`clock`] module for details.
 
 #![no_std]
 #![allow(clippy::unnecessary_cast)]
 #![allow(clippy::identity_op)]
 #![allow(clippy::single_match)]
 #![allow(clippy::new_without_default)]
+
+pub mod clock;
+
+pub use clock::{config_168, config_180, config_usb_only, SYSCLK_HZ_168, SYSCLK_HZ_180};
 
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
 #[cfg(feature = "display")]
