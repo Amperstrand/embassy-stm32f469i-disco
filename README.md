@@ -57,7 +57,7 @@ flowchart LR
     PLLSAI --> PIXEL["54.86MHz LTDC<br/>PLLSAI_R / 7"]
 ```
 
-See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full clock tree, register-level details, and the DCKCFGR2 workaround.
+See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full clock tree and register-level details.
 
 ## Hardware
 
@@ -137,14 +137,14 @@ config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, div
 config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q; // PLL_Q = 48 MHz at 168 MHz
 ```
 
-**180 MHz (full speed, requires DCKCFGR2 workaround):**
+**180 MHz (full speed, USB + display + touch):**
 ```rust
 config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL360, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: Some(PllRDiv::DIV6) });
 config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divp: Some(PllPDiv::DIV8), divq: Some(PllQDiv::DIV8), divr: Some(PllRDiv::DIV7) });
 config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q; // PLLSAI_Q = 48 MHz
-// After embassy_stm32::init():
-stm32_metapac::RCC.dckcfgr2().modify(|w| { w.set_clk48sel(mux::Clk48sel::PLLSAI1_Q); });
 ```
+
+> **Note:** Previous versions of this documentation recommended a DCKCFGR2 register write after `embassy_stm32::init()`. This was unnecessary — DCKCFGR2 does not exist on STM32F469 (writes don't stick, see #27). Embassy correctly writes CK48MSEL to DCKCFGR bit 27.
 
 See `examples/test_usb_cdc_stress.rs` for USB-only testing, or `Amperstrand/micronuts` for a working USB+display+touch firmware at 180 MHz.
 

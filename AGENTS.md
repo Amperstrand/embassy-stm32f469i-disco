@@ -224,7 +224,7 @@ BSP's own test suite run independently on hardware via probe-rs.
 | Subsystem | Status | Notes |
 |-----------|--------|-------|
 | **DSI reads** | FAIL | `DisplayCtrl::probe()` fails consistently (BTA/PHY timing). Workaround: `BoardHint::ForceNt35510` skips probe. Writes work fine, display renders correctly. Not needed for normal operation. |
-| **RNG at 180MHz PLL** | PASS (with PLLSAI_Q) | 180MHz config: PLL1_Q=51.4MHz (wrong for USB/RNG). Fix: route CK48SEL to PLLSAI_Q (384/8=48MHz) with manual DCKCFGR2 write. See Amperstrand/gm65-scanner#23, Amperstrand/micronuts for working implementation |
+| **RNG at 180MHz PLL** | PASS | 180MHz config: PLL1_Q=51.4MHz (wrong for USB/RNG). Fix: PLLSAI_Q=48MHz via `divq: Some(PllQDiv::DIV8)`, CK48MSEL routed via DCKCFGR (not DCKCFGR2 — that register does not exist on F469). See #27 (hardware-verified) |
 | **SDIO** | NOT TESTED | No microSD card testing. Out of scope for Cashu wallet use case. |
 
 ## Known Issues
@@ -237,19 +237,19 @@ The STM32F469 clock tree has a non-obvious constraint: **no single PLL config pr
 
 **Two working solutions:**
 
-| Config | SYSCLK | USB Clock | LTDC Pixel Clock | DCKCFGR2 Workaround? | Used By |
-|--------|--------|-----------|-----------------|---------------------|---------|
-| 168 MHz + PLLSAI | 168 MHz | PLL_Q = 48 MHz | PLLSAI_R = 54.86 MHz | No | microfips (#113) |
-| 180 MHz + PLLSAI | 180 MHz | PLLSAI_Q = 48 MHz | PLLSAI_R = 54.86 MHz | Yes (embassy bug) | micronuts |
+| Config | SYSCLK | USB Clock | LTDC Pixel Clock | Used By |
+|--------|--------|-----------|-----------------|---------|
+| 168 MHz + PLLSAI | 168 MHz | PLL_Q = 48 MHz | PLLSAI_R = 54.86 MHz | microfips (#113) |
+| 180 MHz + PLLSAI | 180 MHz | PLLSAI_Q = 48 MHz | PLLSAI_R = 54.86 MHz | micronuts |
 
-**embassy-stm32 register bug:** embassy writes `clk48sel` to `RCC.DCKCFGR` instead of `RCC.DCKCFGR2` on STM32F469. At 168 MHz this is harmless (PLL_Q = 48 MHz). At 180 MHz USB fails without manual DCKCFGR2 write. See gm65-scanner#23.
+**~~embassy-stm32 register bug~~ (CORRECTED — see #27):** We previously claimed embassy writes `clk48sel` to the wrong register (`RCC.DCKCFGR` instead of `RCC.DCKCFGR2`). This is **incorrect**. DCKCFGR2 does not exist on STM32F469 — the register at offset 0x94 reads back 0 after write. CK48MSEL is correctly in DCKCFGR bit 27, and embassy writes to the right register. Hardware testing (test_clk48_hypothesis, conditions A-D, 2026-05-07) confirmed: RNG passes in all conditions, DCKCFGR2 writes never stick. The "DCKCFGR2 workaround" was always a no-op.
 
 **sync HAL bug:** `stm32f4xx-hal`'s `DisplayController::new()` uses `.write()` on PLLSAICFGR, destroying PLLSAI_P and PLLSAI_Q. The embassy BSP avoids this by configuring PLLSAI through `config.rcc.pllsai`. See gm65-scanner#47.
 
 **Issue chain:**
 - embassy-stm32f469i-disco#1, #25 — PLLSAI not configured (display crashes)
 - embassy-stm32f469i-disco#13, #14 — 48MHz clock at 180MHz (definitive workaround)
-- gm65-scanner#23 — embassy DCKCFGR vs DCKCFGR2 register bug
+- gm65-scanner#23 — ~~embassy DCKCFGR vs DCKCFGR2 register bug~~ (see #27: DCKCFGR2 does not exist on F469)
 - gm65-scanner#47, #50 — sync HAL PLLSAI destruction + ARGB8888 column shift
 
 ### FT6X06 Phantom Touch Events (#17 on stm32f469i-disc, fixed in firmware)

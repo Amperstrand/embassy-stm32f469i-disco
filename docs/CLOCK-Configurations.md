@@ -70,27 +70,20 @@ config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
 let p = embassy_stm32::init(config);
 ```
 
-## DCKCFGR2 Workaround
+## ~~DCKCFGR2 Workaround~~ (INCORRECT — removed)
 
-Embassy's `embassy_stm32::init()` writes the 48 MHz clock mux selector to the wrong register (DCKCFGR1 instead of DCKCFGR2 on STM32F469). This means USB will not receive the correct 48 MHz clock even when the PLLSAI configuration above is correct.
-
-After calling `embassy_stm32::init(config)`, apply this workaround:
-
-```rust
-// Workaround: embassy writes clk48sel to DCKCFGR1 but STM32F469 uses DCKCFGR2
-stm32_metapac::RCC.dckcfgr2().modify(|w| {
-    w.set_clk48sel(mux::Clk48sel::PLLSAI1_Q);
-});
-```
-
-Without this workaround, USB enumeration will fail because the 48 MHz clock mux remains in its default state (typically HSI48 or no clock), regardless of what `config.rcc.mux.clk48sel` was set to.
+> **Correction (2026-05-07, issue #27):** The DCKCFGR2 workaround was based on an incorrect assumption. DCKCFGR2 **does not exist** on STM32F469 — the register at offset 0x94 reads back as 0 after write. CK48MSEL is in DCKCFGR bit 27, and embassy writes to the correct register.
+>
+> Hardware testing (`test_clk48_hypothesis`, conditions A-D) confirmed that the 48MHz clock works correctly without any DCKCFGR2 write. The write was always a no-op.
+>
+> The real mechanism: PLLSAI_Q = 48MHz (via `divq: Some(PllQDiv::DIV8)`), selected by `clk48sel = PLLSAI1_Q` which embassy writes to DCKCFGR (the correct register).
 
 ## Troubleshooting
 
 | Symptom | Likely Cause | Solution |
 |---------|--------------|----------|
-| USB device not recognized by host | 48 MHz clock source incorrect | Verify PLLSAI_P = DIV8, apply DCKCFGR2 workaround |
-| USB enumerates but no data flows | DCKCFGR2 workaround missing | Add `stm32_metapac::RCC.dckcfgr2().modify(...)` after init |
+| USB device not recognized by host | 48 MHz clock source incorrect | Verify PLLSAI_Q = DIV8 (48MHz), `clk48sel = PLLSAI1_Q` |
+| USB enumerates but no data flows | probe-rs RTT blocking USB ISR | Use `st-flash --connect-under-reset` for USB testing |
 | Display is black | PLLSAI_R not configured or wrong pixel clock | Verify `divr: Some(PllRDiv::DIV7)` on PLLSAI config |
 | USB enumeration fails with probe-rs attached | probe-rs holds SWD, RTT blocks USB ISR | Use `st-flash --connect-under-reset` for USB testing |
 | USB enumeration intermittent | defmt-rtt critical sections block USB OTG ISR | Remove `defmt-rtt` and `panic-probe` from production builds |
