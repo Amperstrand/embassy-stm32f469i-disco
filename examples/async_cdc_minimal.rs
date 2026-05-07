@@ -72,6 +72,44 @@ async fn main(_spawner: Spawner) {
     }
     let mut p = embassy_stm32::init(config);
 
+    // USB PHY reset: after st-flash SYSRESETREQ, the USB OTG FS PHY retains
+    // stale state and won't re-enumerate. Cycling the RCC clock + core soft
+    // reset + PHY power cycle ensures a clean start. See gm65-scanner#57.
+    {
+        let rcc = stm32_metapac::RCC;
+
+        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(false));
+        cortex_m::asm::delay(100);
+        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(true));
+
+        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(true));
+        cortex_m::asm::delay(100);
+        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(false));
+        cortex_m::asm::delay(100);
+
+        let otg_global = 0x5000_0000usize as *mut u32;
+        // SAFETY: USB OTG FS register block at 0x5000_0000 is a fixed hardware
+        // address on STM32F469 (RM0386 §30). We access it before the embassy USB
+        // driver takes ownership, using volatile reads/writes for register-level
+        // reset sequencing. No aliasing — the driver hasn't been created yet.
+        unsafe {
+            let mut timeout = 100_000u32;
+            while otg_global.add(0x010 / 4).read_volatile() & (1 << 31) == 0 {
+                timeout -= 1;
+                if timeout == 0 { break; }
+            }
+            otg_global.add(0x010 / 4).write_volatile(1);
+            timeout = 100_000u32;
+            while otg_global.add(0x010 / 4).read_volatile() & 1 != 0 {
+                timeout -= 1;
+                if timeout == 0 { break; }
+            }
+            otg_global.add(0x038 / 4).write_volatile(0);
+            cortex_m::asm::delay(100);
+            otg_global.add(0x038 / 4).write_volatile(1 << 16);
+        }
+    }
+
     let sdram = SdramCtrl::new(&mut p, 168_000_000);
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
