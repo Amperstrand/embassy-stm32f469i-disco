@@ -16,8 +16,8 @@ touch = []
 defmt = ["dep:defmt"]
 
 [dependencies]
-embassy-stm32 = { git = "https://github.com/embassy-rs/embassy", package = "embassy-stm32", rev = "84444a19", features = ["stm32f469ni", "time-driver-any", "exti"] }
-embassy-time = { git = "https://github.com/embassy-rs/embassy", package = "embassy-time", rev = "84444a19" }
+embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
+embassy-time = { version = "0.5.1" }
 cortex-m = "0.7"
 defmt = { version = "1.0", optional = true }
 embedded-hal = "1.0"
@@ -32,10 +32,10 @@ embedded-graphics = { version = "0.8", optional = true }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 
 [dev-dependencies]
-embassy-executor = { git = "https://github.com/embassy-rs/embassy", package = "embassy-executor", rev = "84444a19", features = ["platform-cortex-m", "executor-thread"] }
-embassy-usb = { git = "https://github.com/embassy-rs/embassy", package = "embassy-usb", rev = "84444a19" }
-embassy-futures = { git = "https://github.com/embassy-rs/embassy", package = "embassy-futures", rev = "84444a19" }
-embassy-sync = { git = "https://github.com/embassy-rs/embassy", package = "embassy-sync", rev = "84444a19" }
+embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread"] }
+embassy-usb = { version = "0.6.0" }
+embassy-futures = { version = "0.1.2" }
+embassy-sync = { version = "0.8.0" }
 defmt = "1.0"
 defmt-rtt = { version = "1.0", features = ["disable-blocking-mode"] }
 panic-probe = { version = "1.0", features = ["print-defmt"] }
