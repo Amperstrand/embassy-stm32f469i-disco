@@ -95,8 +95,8 @@ Use [`config_180()`], [`config_168()`], or [`config_usb_only()`] from `src/clock
 
 | Config | Sysclk | 48MHz source | USB | RNG | Display | Used by |
 |--------|--------|-------------|-----|-----|---------|---------|
-| 180MHz | HSE/8 * 360 / 2 | PLLSAI_Q (384/8=48MHz) | YES | YES | PLLSAI_R=54.86MHz | Full-featured firmware |
-| 168MHz | HSE/4 * 168 / 2 | PLL1_Q (168/7=48MHz) | YES | YES | PLLSAI_R=54.86MHz | USB+display, simpler clock |
+| 180MHz | HSE/8 * 360 / 2 | PLLSAI_Q (384/8=48MHz) | YES | YES | PLLSAI_R=54.86MHz | micronuts, gm65-scanner |
+| 168MHz | HSE/4 * 168 / 2 | PLL1_Q (168/7=48MHz) | YES | YES | PLLSAI_R=54.86MHz | microfips |
 | USB-only | 168MHz | PLL1_Q | YES | YES | NO | USB CDC without display |
 
 **Hardware-verified** (2026-05-07, issue #27): At 180MHz, PLLSAI_Q provides 48MHz via `divq: DIV8`.
@@ -159,6 +159,11 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `07e09cd` | `main` | hw_diag RNG/Timer/DMA fixes (pending HW verification, issue #29) |
+| `f856b6e` | `main` | USB PHY reset, clock docs corrected. **Used by micronuts + microfips** |
+| `d28c859` | `main` | docs: correct 48MHz clock mechanism (PLLSAI_Q not PLLSAI_P) |
+| `cdd9e91` | `main` | Clock presets module, CK48MSEL hypothesis test |
+| `151b5ba` | `main` | Embassy deps migrated from git rev to crates.io |
 | `e202e9a` | `main` | docs: update AGENTS.md with ITM example, re-exports, known-good pins |
 | `a64458f` | `main` | ITM/SWO example, full rustdoc, SdramCtrl/SDRAM_SIZE_BYTES re-export |
 | `a50f241` | `main` | Stress firmware stale buffer fix, read_vendor_id/read_chip_model, run_usb_cdc_test.sh |
