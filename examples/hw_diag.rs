@@ -1109,7 +1109,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
         let mut touch_count = 0u32;
         while deadline > 0 {
             if touch.td_status().unwrap_or(0) > 0 {
-                if let Ok(point) = touch.get_touch() {
+                if let Ok(Some(point)) = touch.get_touch() {
                     if point.x >= 3 && point.x <= 476 && point.y >= 3 && point.y <= 796 {
                         let cross = Rgb888::new(0xff, 0xff, 0x00);
                         let cs = PrimitiveStyle::with_fill(cross);

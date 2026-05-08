@@ -803,7 +803,7 @@ async fn main(_spawner: Spawner) {
         while remaining_ms > 0 && dots_collected < TOUCH_DOTS_TARGET {
             if let Ok(status) = touch_ctrl.td_status() {
                 if status > 0 {
-                    if let Ok(point) = touch_ctrl.get_touch() {
+                    if let Ok(Some(point)) = touch_ctrl.get_touch() {
                         if valid_touch(&point) {
                             let cx = point.x as i32;
                             let cy = point.y as i32;

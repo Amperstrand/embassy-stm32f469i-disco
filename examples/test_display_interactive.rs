@@ -957,7 +957,7 @@ fn read_touch_raw(
 ) -> Option<(i32, i32)> {
     match touch.td_status() {
         Ok(s) if s > 0 => match touch.get_touch() {
-            Ok(p) => Some((p.x as i32, p.y as i32)),
+            Ok(Some(p)) => Some((p.x as i32, p.y as i32)),
             _ => None,
         },
         _ => None,

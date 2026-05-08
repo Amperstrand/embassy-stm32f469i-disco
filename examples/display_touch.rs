@@ -66,7 +66,7 @@ async fn main(_spawner: Spawner) {
 
         match touch.td_status() {
             Ok(status) if status > 0 => match touch.get_touch() {
-                Ok(point) if valid_touch(point.x, point.y) => {
+                Ok(Some(point)) if valid_touch(point.x, point.y) => {
                     let point = Point::new(point.x as i32, point.y as i32);
                     info!("Touch: x={}, y={}", point.x, point.y);
 
