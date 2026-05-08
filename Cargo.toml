@@ -87,6 +87,10 @@ name = "display_touch_rgb565"
 test = false
 
 [[example]]
+name = "extensive_hw_test"
+test = false
+
+[[example]]
 name = "hw_diag"
 test = false
 
