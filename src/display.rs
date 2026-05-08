@@ -54,7 +54,7 @@ pub use nt35510::PANEL_WIDTH as FB_WIDTH;
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
 pub trait DisplayFormat: Copy + 'static {
-    type Pixel: Copy;
+    type Pixel: Copy + PartialEq;
 
     type Color: RgbColor;
 
@@ -1004,6 +1004,50 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
     pub fn orientation(&self) -> DisplayOrientation {
         self.orientation
     }
+
+    /// Dump all LTDC layer 0 registers via defmt for debugging display issues.
+    ///
+    /// Call after `DisplayCtrl::new()` to verify the LTDC configuration.
+    /// Logs framebuffer address, pixel format, window position, and timing.
+    #[cfg(feature = "defmt")]
+    pub fn log_ltdc_config(&self) {
+        let ltdc = LTDC;
+        let layer = ltdc.layer(0);
+        defmt::info!(
+            "LTDC: CFBAR={:#x}, PFCR={}, CFBP={}, CFBLL={}, CFBLNR={}",
+            layer.cfbar().read().cfbadd(),
+            layer.pfcr().read().pf() as u8,
+            layer.cfblr().read().cfbp(),
+            layer.cfblr().read().cfbll(),
+            layer.cfblnr().read().cfblnbr(),
+        );
+        defmt::info!(
+            "LTDC: WHPCR={}..{}, WVPCR={}..{}",
+            layer.whpcr().read().whstpos(),
+            layer.whpcr().read().whsppos(),
+            layer.wvpcr().read().wvstpos(),
+            layer.wvpcr().read().wvsppos(),
+        );
+        defmt::info!(
+            "LTDC: SSCR hsw={}, vsh={}, BPCR ahbp={}, avbp={}",
+            ltdc.sscr().read().hsw(),
+            ltdc.sscr().read().vsh(),
+            ltdc.bpcr().read().ahbp(),
+            ltdc.bpcr().read().avbp(),
+        );
+        defmt::info!(
+            "LTDC: AWCR aah={}, aaw={}, TWCR totalh={}, totalw={}",
+            ltdc.awcr().read().aah(),
+            ltdc.awcr().read().aaw(),
+            ltdc.twcr().read().totalh(),
+            ltdc.twcr().read().totalw(),
+        );
+        defmt::info!(
+            "LTDC: layer CR len={}, CACR alpha={}",
+            layer.cr().read().len() as u8,
+            layer.cacr().read().consta(),
+        );
+    }
 }
 
 impl<'d> DisplayCtrl<'d> {
@@ -1188,6 +1232,42 @@ impl<F: DisplayFormat> FramebufferView<'_, F> {
         for pixel in self.buffer.iter_mut() {
             *pixel = raw;
         }
+    }
+
+    /// Fill framebuffer with 4 distinct colors (one per quarter) and verify readback.
+    ///
+    /// Display shows red/green/blue/yellow quarters for visual inspection.
+    /// Returns mismatched pixel count (0 = pass). Useful for validating
+    /// SDRAM framebuffer integrity and display alignment.
+    #[cfg(feature = "defmt")]
+    pub fn verify_quarter_fill(&mut self) -> usize {
+        let qh = self.height / 4;
+        let colors: [F::Pixel; 4] = [
+            F::encode(F::Color::new(0xFF, 0x00, 0x00)),
+            F::encode(F::Color::new(0x00, 0xFF, 0x00)),
+            F::encode(F::Color::new(0x00, 0x00, 0xFF)),
+            F::encode(F::Color::new(0xFF, 0xFF, 0x00)),
+        ];
+
+        for q in 0..4 {
+            let start = q * qh * self.width;
+            let end = if q == 3 { self.buffer.len() } else { (q + 1) * qh * self.width };
+            for px in self.buffer[start..end].iter_mut() {
+                *px = colors[q];
+            }
+        }
+
+        let mut mismatches = 0usize;
+        for q in 0..4 {
+            let start = q * qh * self.width;
+            let end = if q == 3 { self.buffer.len() } else { (q + 1) * qh * self.width };
+            for &px in &self.buffer[start..end] {
+                if px != colors[q] {
+                    mismatches += 1;
+                }
+            }
+        }
+        mismatches
     }
 }
 
