@@ -29,8 +29,37 @@ rustup target add thumbv7em-none-eabihf
 cargo build --target thumbv7em-none-eabihf
 
 # Flash and run
-probe-rs run --chip STM32F469NIHx --target thumbv7em-none-eabihf --example blink
+probe-rs run --chip STM32F469NIHx --target thumbv7em-none-eabihf --example board_blinky
 ```
+
+## Board API
+
+`Board::new()` initializes SDRAM, display, touch controller, LEDs, and the user button in a single call:
+
+```rust
+use embassy_stm32f469i_disco::{Board, BoardHint};
+use embedded_graphics::pixelcolor::Rgb888;
+
+let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
+let mut board = Board::new(p, BoardHint::ForceNt35510);
+
+// Access display framebuffer
+let mut fb = board.display.fb();
+fb.clear(Rgb888::BLACK);
+
+// Poll touch
+if let Ok(Some(point)) = board.touch.get_touch() {
+    // point.x (0..479), point.y (0..799)
+}
+
+// Blink an LED
+board.leds.green.toggle();
+
+// Free pins after SDRAM bring-up (e.g. USART6 for a scanner)
+let _tx = board.sdram_remainders.usart6_tx;
+```
+
+See `examples/board_display.rs` and `examples/board_touch.rs` for complete working examples.
 
 ## Features
 
@@ -38,6 +67,8 @@ probe-rs run --chip STM32F469NIHx --target thumbv7em-none-eabihf --example blink
 |---------|-------------|---------|
 | `display` | DSI/LTDC display via NT35510, embedded-graphics support | Yes |
 | `touch` | FT6X06 capacitive touch via I2C1 | Yes |
+| `bringup` | Historical bring-up and register-level examples | No |
+| `defmt` | `defmt` logging support | No |
 
 ```toml
 [dependencies]
@@ -46,14 +77,14 @@ embassy-stm32f469i-disco = { git = "https://github.com/Amperstrand/embassy-stm32
 
 ## Clock Configuration
 
-The BSP uses a dual-PLL configuration at 180 MHz SYSCLK. PLL1 drives the CPU and bus clocks, while PLLSAI provides the 48 MHz USB clock and the LTDC pixel clock.
+The BSP provides clock presets that handle PLL/PLLSAI configuration. Use [`config_180()`] for full-speed operation (display + USB + touch), [`config_168()`] for 168 MHz, or [`config_usb_only()`] for USB without display.
 
 ```mermaid
 flowchart LR
     HSE["HSE 8MHz"] --> PLL1["PLL1 180MHz"]
     HSE --> PLLSAI["PLLSAI 192MHz VCO"]
     PLL1 --> SYSCLK["SYSCLK 180MHz"]
-    PLLSAI --> USB48["48MHz USB<br/>PLLSAI_P / 8"]
+    PLLSAI --> USB48["48MHz USB<br/>PLLSAI_Q / 8"]
     PLLSAI --> PIXEL["54.86MHz LTDC<br/>PLLSAI_R / 7"]
 ```
 
@@ -62,7 +93,7 @@ See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full cl
 ## Hardware
 
 - **MCU**: STM32F469NIH6 (Cortex-M4F, 180 MHz)
-- **Display**: 480x800 RGB565 LCD via DSI/LTDC (NT35510)
+- **Display**: 480x800 RGB888 LCD via DSI/LTDC (NT35510)
 - **SDRAM**: 16 MB via FMC (IS42S32400F-6BL)
 - **Touch**: FT6X06 capacitive touch via I2C1
 - **USB**: OTG FS (CDC-ACM)
@@ -70,115 +101,82 @@ See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full cl
 
 ## Examples
 
-Idiomatic examples live in `examples/board_*.rs` — these use the BSP's safe APIs and are the recommended starting points.
+Board API examples are the recommended starting points. Build all with `cargo build --target thumbv7em-none-eabihf --examples`.
 
-Historical bring-up and debugging examples (raw register access, `unsafe` code) are in `examples/bringup/` behind the `bringup` feature flag:
+| Example | Description |
+|---------|-------------|
+| `board_blinky` | Blink all 4 LEDs using Board API |
+| `board_display` | Draw text on display using Board API |
+| `board_touch` | Poll touch coordinates using Board API |
+| `extensive_hw_test` | Full interactive hardware test (39 tests, two-phase) |
+| `display_hybrid` | Display with embedded-graphics |
+| `display_touch` | Display + touch crosshair |
+| `display_touch_rgb565` | Display + touch in RGB565 pixel format |
+| `hw_diag` | On-screen hardware diagnostics |
+| `test_display_interactive` | Interactive display diagnostics |
+| `async_cdc_minimal` | USB CDC echo (st-flash, not probe-rs) |
+| `test_usb_cdc_stress` | USB CDC stress test |
+
+Bring-up examples (raw register access, `unsafe` code) require `--features bringup`:
 
 ```bash
-# Build all idiomatic examples (default)
-cargo build --target thumbv7em-none-eabihf --examples
-
-# Build all examples including bring-up
 cargo build --target thumbv7em-none-eabihf --examples --features bringup
 ```
 
-### Blink an LED
+## USB CDC
+
+USB and display can coexist at both 180 MHz and 168 MHz with the correct clock configuration. Use the clock presets (`config_180()`, `config_168()`) instead of manual PLL setup.
 
 ```rust
-let p = embassy_stm32::init(embassy_stm32::Config::default());
-let mut led = embassy_stm32::gpio::Output::new(
-    p.PG6,
-    embassy_stm32::gpio::Level::Low,
-    embassy_stm32::gpio::Speed::Low,
+// 180 MHz with USB + display + touch
+let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
+
+// Reset USB PHY for clean re-enumeration after st-flash
+embassy_stm32f469i_disco::reset_usb_phy();
+
+// Now create USB driver
+let driver = embassy_stm32::usb::Driver::new_fs(
+    p.USB_OTG_FS, Irqs, p.PA12, p.PA11, ep_out_buffer, usb_config,
 );
-loop {
-    Timer::after(embassy_time::Duration::from_secs(1)).await;
-    led.toggle();
-}
 ```
 
-### Display + SDRAM
+> **Important:** Use `st-flash` for USB firmware deployment. Do not use `probe-rs run` during USB testing, as the debug probe interferes with USB enumeration.
 
-Display and SDRAM require the 180 MHz PLL configuration:
-
-```rust
-let mut config = embassy_stm32::Config::default();
-config.rcc.hse = Some(Hse { freq: embassy_stm32::time::mhz(8), mode: HseMode::Oscillator });
-config.rcc.pll_src = PllSource::HSE;
-config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL360, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: Some(PllRDiv::DIV6) });
-config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divr: Some(PllRDiv::DIV7) });
-config.rcc.sys = Sysclk::PLL1_P;
-config.rcc.ahb_pre = AHBPrescaler::DIV1;
-config.rcc.apb1_pre = APBPrescaler::DIV4;
-config.rcc.apb2_pre = APBPrescaler::DIV2;
-let p = embassy_stm32::init(config);
-
-let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
-let mut display = DisplayCtrl::new(&sdram, unsafe { p.PH7.clone_unchecked() }, BoardHint::Auto);
-let mut fb = display.fb();
-fb.clear(Rgb888::new(0, 0, 0));
-```
-
-See `examples/board_display.rs` for a complete working example.
-
-### Touch
-
-```rust
-let mut i2c = embassy_stm32::i2c::I2c::new_blocking(
-    p.I2C1, p.PB8, p.PB9,
-    embassy_stm32::i2c::Config::default(),
-);
-let touch = TouchCtrl::new();
-if touch.td_status(&mut i2c).unwrap_or(0) > 0 {
-    if let Ok(point) = touch.get_touch(&mut i2c) {
-        // point.x, point.y are u16 coordinates (0-479, 0-799)
-    }
-}
-```
-
-### USB CDC
-
-USB and display can coexist with the correct clock configuration. Two options:
-
-**168 MHz (simplest, recommended):**
-```rust
-config.rcc.hse = Some(Hse { freq: Hertz(8_000_000), mode: HseMode::Oscillator });
-config.rcc.pll_src = PllSource::HSE;
-config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL336, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: None });
-config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divp: None, divq: None, divr: Some(PllRDiv::DIV7) });
-config.rcc.mux.clk48sel = mux::Clk48sel::PLL1_Q; // PLL_Q = 48 MHz at 168 MHz
-```
-
-**180 MHz (full speed, USB + display + touch):**
-```rust
-config.rcc.pll = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL360, divp: Some(PllPDiv::DIV2), divq: Some(PllQDiv::DIV7), divr: Some(PllRDiv::DIV6) });
-config.rcc.pllsai = Some(Pll { prediv: PllPreDiv::DIV8, mul: PllMul::MUL384, divp: Some(PllPDiv::DIV8), divq: Some(PllQDiv::DIV8), divr: Some(PllRDiv::DIV7) });
-config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q; // PLLSAI_Q = 48 MHz
-```
-
-> **Note:** Previous versions of this documentation recommended a DCKCFGR2 register write after `embassy_stm32::init()`. This was unnecessary — DCKCFGR2 does not exist on STM32F469 (writes don't stick, see #27). Embassy correctly writes CK48MSEL to DCKCFGR bit 27.
-
-See `examples/test_usb_cdc_stress.rs` for USB-only testing, or `Amperstrand/micronuts` for a working USB+display+touch firmware at 180 MHz.
+See `examples/async_cdc_minimal.rs` for a complete USB CDC example.
 
 ## API
 
 | Export | Type | Description |
 |--------|------|-------------|
+| `Board` | struct | Ergonomic board initializer (SDRAM, display, touch, LEDs, button) |
+| `Leds` | struct | 4 user LEDs (green, orange, red, blue), active-low |
+| `UserButton` | struct | PA0 user button |
+| `SdramRemainders` | struct | Free pins after SDRAM init (USART6 TX/RX) |
 | `DisplayCtrl` | struct | DSI/LTDC display controller |
 | `FramebufferView` | struct | DrawTarget for embedded-graphics |
 | `SdramCtrl` | struct | FMC SDRAM controller (16 MB) |
-| `TouchCtrl` | struct | FT6X06 touch controller (`read_vendor_id`, `read_chip_model`, `get_touch`) |
+| `TouchCtrl<I2C>` | struct | FT6X06 touch controller (generic over any I2C) |
+| `TouchPoint` | struct | Touch coordinates with `Clone`, `Copy`, `Display` |
+| `TouchError<E>` | enum | Touch controller error type |
+| `EdgeFilter` | struct | Phantom-touch rejection filter, `default_ft6x06()` |
 | `BoardHint` | enum | `Auto`, `ForceNt35510`, `ForceOtm8009a` |
+| `config_180()` | fn | 180 MHz PLL config (display + USB + touch) |
+| `config_168()` | fn | 168 MHz PLL config |
+| `config_usb_only()` | fn | 168 MHz, USB without display |
+| `reset_usb_phy()` | fn | Reset USB OTG FS PHY for clean re-enumeration |
+| `SYSCLK_HZ_180` | const | 180_000_000 |
+| `SYSCLK_HZ_168` | const | 168_000_000 |
 | `FB_HEIGHT` | const | 800 |
 | `FB_WIDTH` | const | 480 |
+| `SDRAM_SIZE_BYTES` | const | 16_777_216 (16 MB) |
 
 ## Known Issues
 
 - **DSI reads** may fail during panel auto-detection. Use `BoardHint::ForceNt35510` to skip probe.
 - **probe-rs** breaks USB enumeration. Use `st-flash` for USB CDC testing.
-- **FT6X06** reports phantom touches at screen edges — consumers should filter with a margin.
+- **FT6X06** reports phantom touches at screen edges. Use `EdgeFilter::default_ft6x06()` to filter them.
 
-See [AGENTS.md](AGENTS.md) for detailed hardware evidence and upstream interaction policy.
+See [AGENTS.md](AGENTS.md) for detailed hardware evidence, cross-project patterns, and upstream interaction policy.
 
 ## License
 
