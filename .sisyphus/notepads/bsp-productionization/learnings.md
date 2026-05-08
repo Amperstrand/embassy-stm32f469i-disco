@@ -176,3 +176,21 @@
 ### Lessons
 - For pure structural splits, keeping cross-cutting traits in the original orchestration module can avoid circular ownership questions while still shrinking the file
 - A small `FramebufferView::new` constructor lets `DisplayCtrl::fb()` keep the same outward behavior while moving framebuffer internals into a separate module
+
+## [2026-05-08] Task 9: Extract panel module
+
+### Changes made
+- Moved `BoardHint`, `LcdController`, panel detection logic, and panel init orchestration into new `src/panel/mod.rs` and `src/panel/nt35510.rs`
+- Kept `src/display.rs` focused on display bring-up orchestration, importing panel types/helpers from the new module
+- Updated crate wiring so `src/lib.rs` owns `mod panel;` and re-exports `BoardHint`/`LcdController` from the panel module
+- Added `.sisyphus/notes/nt35510-api-gaps.md` to capture what should move upstream into the `nt35510` crate in T16/T17
+
+### Verification
+- `lsp_diagnostics` clean for `src/display.rs`, `src/panel/mod.rs`, `src/panel/nt35510.rs`, `src/lib.rs`, and `src/dsi.rs`
+- `cargo build --target thumbv7em-none-eabihf --examples` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings` exits 0
+- Evidence saved to `.sisyphus/evidence/task-9-build.txt`
+
+### Lessons
+- Structural extraction can preserve behavior by moving panel-specific policy/helpers as a unit while leaving board-level display sequencing in the orchestrator module
+- T16 handoff notes are easiest to write at split time, while the boundary between controller-generic logic and BSP-specific glue is still fresh

@@ -1,7 +1,7 @@
 //! DSI host register access and configuration helpers.
 //!
 //! DSI command-mode reads fail with BTA/PHY timing issues. Use
-//! [`crate::display::BoardHint::ForceNt35510`] to skip probe.
+//! [`crate::BoardHint::ForceNt35510`] to skip probe.
 
 use embassy_stm32::{dsihost, peripherals};
 use embassy_time::{block_for, Duration};

@@ -1,0 +1,21 @@
+Task 9 verification evidence
+
+Command: cargo build --target thumbv7em-none-eabihf --examples
+Result: success
+Output:
+   Compiling embassy-stm32f469i-disco v0.1.0 (/home/ubuntu/src/embassy-stm32f469i-disco)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.73s
+
+Command: cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings
+Result: success
+Output:
+    Blocking waiting for file lock on build directory
+    Checking embassy-stm32f469i-disco v0.1.0 (/home/ubuntu/src/embassy-stm32f469i-disco)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.69s
+
+Diagnostics:
+- lsp_diagnostics clean for src/display.rs
+- lsp_diagnostics clean for src/panel/mod.rs
+- lsp_diagnostics clean for src/panel/nt35510.rs
+- lsp_diagnostics clean for src/lib.rs
+- lsp_diagnostics clean for src/dsi.rs
