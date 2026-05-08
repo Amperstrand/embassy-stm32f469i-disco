@@ -304,7 +304,7 @@ impl SdramCtrl {
 
     #[must_use]
     pub fn test_quick(&self) -> bool {
-        let words = unsafe { core::slice::from_raw_parts_mut(self.mem as *mut u32, 1024) };
+        let words = unsafe { core::slice::from_raw_parts_mut(self.mem, 1024) };
         for word in words.iter_mut() {
             *word = 0xDEAD_BEEF;
         }
@@ -1240,29 +1240,40 @@ impl<F: DisplayFormat> FramebufferView<'_, F> {
     /// Returns mismatched pixel count (0 = pass). Useful for validating
     /// SDRAM framebuffer integrity and display alignment.
     #[cfg(feature = "defmt")]
-    pub fn verify_quarter_fill(&mut self) -> usize {
+    pub fn verify_quarter_fill(&mut self) -> usize
+    where
+        F::Color: embedded_graphics::pixelcolor::RgbColor,
+    {
         let qh = self.height / 4;
         let colors: [F::Pixel; 4] = [
-            F::encode(F::Color::new(0xFF, 0x00, 0x00)),
-            F::encode(F::Color::new(0x00, 0xFF, 0x00)),
-            F::encode(F::Color::new(0x00, 0x00, 0xFF)),
-            F::encode(F::Color::new(0xFF, 0xFF, 0x00)),
+            F::encode(F::Color::RED),
+            F::encode(F::Color::GREEN),
+            F::encode(F::Color::BLUE),
+            F::encode(F::Color::YELLOW),
         ];
 
-        for q in 0..4 {
+        for (q, &color) in colors.iter().enumerate() {
             let start = q * qh * self.width;
-            let end = if q == 3 { self.buffer.len() } else { (q + 1) * qh * self.width };
+            let end = if q == 3 {
+                self.buffer.len()
+            } else {
+                (q + 1) * qh * self.width
+            };
             for px in self.buffer[start..end].iter_mut() {
-                *px = colors[q];
+                *px = color;
             }
         }
 
         let mut mismatches = 0usize;
-        for q in 0..4 {
+        for (q, &color) in colors.iter().enumerate() {
             let start = q * qh * self.width;
-            let end = if q == 3 { self.buffer.len() } else { (q + 1) * qh * self.width };
+            let end = if q == 3 {
+                self.buffer.len()
+            } else {
+                (q + 1) * qh * self.width
+            };
             for &px in &self.buffer[start..end] {
-                if px != colors[q] {
+                if px != color {
                     mismatches += 1;
                 }
             }

@@ -55,6 +55,12 @@ pub struct TouchCtrl {
     i2c_addr: u8,
 }
 
+impl Default for TouchCtrl {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TouchCtrl {
     /// Create a new FT6X06 driver with the default I2C address (0x38).
     pub fn new() -> Self {
