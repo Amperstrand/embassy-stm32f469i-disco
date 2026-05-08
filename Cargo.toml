@@ -2,12 +2,15 @@
 name = "embassy-stm32f469i-disco"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.94.0"
 license = "MIT OR Apache-2.0"
-description = "Board support package for STM32F469I-Discovery with Embassy async framework"
+description = "Embassy async BSP for the STM32F469I-Discovery board (display, SDRAM, touch, USB)"
 readme = "README.md"
 repository = "https://github.com/Amperstrand/embassy-stm32f469i-disco"
-keywords = ["embedded", "stm32", "discovery", "embassy", "async", "no-std"]
-categories = ["embedded", "hardware-support", "no-std"]
+homepage = "https://github.com/Amperstrand/embassy-stm32f469i-disco"
+documentation = "https://docs.rs/embassy-stm32f469i-disco"
+keywords = ["embedded", "stm32", "embassy", "async", "no-std"]
+categories = ["embedded", "no-std", "hardware-support"]
 
 [features]
 default = ["display", "touch"]
