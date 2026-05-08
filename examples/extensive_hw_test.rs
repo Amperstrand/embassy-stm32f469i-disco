@@ -113,10 +113,10 @@ unsafe fn flush_to_ccmram() {
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).count), RESULT_COUNT as u32);
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).pass_count), PASS_COUNT as u32);
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).fail_count), FAIL_COUNT as u32);
-    for i in 0..RESULT_COUNT.min(MAX_TESTS) {
+    for (i, (name, passed)) in RESULTS[..RESULT_COUNT.min(MAX_TESTS)].iter().enumerate() {
         let entry = core::ptr::addr_of_mut!((*buf).entries[i]);
-        copy_name(&mut (*entry).name, RESULTS[i].0);
-        core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).passed), if RESULTS[i].1 { 1 } else { 0 });
+        copy_name(&mut (*entry).name, name);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).passed), if *passed { 1 } else { 0 });
     }
 }
 
@@ -675,7 +675,7 @@ async fn phase2_sdram_and_display(board: &mut Board) {
 
     unsafe {
         trun("SDRAM Checkerboard");
-        match (|| {
+        let result: Result<(), &str> = {
             let ram = sdram_scratch_words();
             let win = 65_536usize.min(ram.len());
             for word in &mut ram[..win] {
@@ -686,7 +686,8 @@ async fn phase2_sdram_and_display(board: &mut Board) {
             } else {
                 Err("mismatch")
             }
-        })() {
+        };
+        match result {
             Ok(()) => tpass("SDRAM Checkerboard"),
             Err(reason) => tfail("SDRAM Checkerboard", reason),
         }
@@ -921,7 +922,7 @@ async fn phase4_touch(board: &mut Board) {
 
     unsafe { trun("Touch Chip Model") };
     match board.touch.read_chip_model() {
-        Ok(model) if matches!(model, 0x06 | 0x36 | 0x64) => unsafe { tpass("Touch Chip Model") },
+        Ok(0x06 | 0x36 | 0x64) => unsafe { tpass("Touch Chip Model") },
         Ok(_) => unsafe { tfail("Touch Chip Model", "unexpected") },
         Err(_) => unsafe { tfail("Touch Chip Model", "i2c") },
     }
