@@ -34,18 +34,24 @@ BUFFER_SIZE = HEADER_SIZE + (ENTRY_SIZE * MAX_TESTS) + 4  # + done
 
 def read_memory(chip: str, address: int, size: int) -> bytes:
     """Read `size` bytes from target memory via probe-rs."""
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+        outfile = f.name
     cmd = [
         "probe-rs", "read",
         "--chip", chip,
-        "--address", hex(address),
-        "--count", str(size),
-        "--format", "bin",
+        "--output", outfile,
+        "--format", "binary",
+        "b8", hex(address), str(size),
     ]
     result = subprocess.run(cmd, capture_output=True)
     if result.returncode != 0:
+        os.unlink(outfile)
         print(f"probe-rs error: {result.stderr.decode()}", file=sys.stderr)
         sys.exit(1)
-    return result.stdout
+    data = open(outfile, "rb").read()
+    os.unlink(outfile)
+    return data
 
 
 def parse_results(data: bytes):

@@ -5,13 +5,13 @@
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32::usb;
 use embassy_stm32::peripherals;
+use embassy_stm32::usb;
+use embassy_stm32f469i_disco::config_usb_only;
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::Builder;
-use embassy_stm32f469i_disco::config_usb_only;
 
 use {defmt_rtt as _, panic_probe as _};
 
@@ -22,6 +22,8 @@ bind_interrupts!(struct Irqs {
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_stm32::init(config_usb_only());
+
+    embassy_stm32f469i_disco::reset_usb_phy();
 
     let mut ep_out_buffer = [0u8; 1024];
     let mut usb_config = usb::Config::default();
