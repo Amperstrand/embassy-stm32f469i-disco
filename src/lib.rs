@@ -28,6 +28,9 @@ pub use usb::reset_usb_phy;
 #[cfg(feature = "display")]
 mod sdram;
 
+#[cfg(feature = "display")]
+mod dsi;
+
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
 #[cfg(feature = "display")]
 pub mod display;

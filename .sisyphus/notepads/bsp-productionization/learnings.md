@@ -146,3 +146,16 @@
 - Returning `&'static mut` from `&self` on a controller type is fundamentally unsound even if the underlying memory is fixed hardware-backed SDRAM
 - A consuming API cleanly encodes the one-owner invariant in the type system and makes the old aliasing bug fail at compile time instead of relying on caller discipline
 - APIs that only need framebuffer memory should take the slice directly; retaining the whole controller in display constructors unnecessarily preserves access to allocation capabilities
+
+## [2026-05-08] Task 7: Extract DSI module
+
+### Changes made
+- Moved DSI host register configuration, timing scaling, and raw command/read adapter code from `src/display.rs` into new internal `src/dsi.rs`
+- Kept display orchestration, panel selection enums, LTDC setup, and framebuffer code in `src/display.rs`; it now imports `configure_dsi_host` and `DsiHostAdapter` from `crate::dsi`
+- Added module docs on `src/dsi.rs` preserving the known command-mode read failure quirk and the `BoardHint::ForceNt35510` workaround
+- Added `mod dsi;` to `src/lib.rs` without expanding the public API; moved items remain `pub(crate)` only
+
+### Lessons
+- Pure structural extraction works cleanly when shared display timing constants stay crate-visible in `display.rs` and the DSI module depends on them, avoiding duplicated register values
+- Keeping `DsiHostAdapter` internal preserves the external BSP API while still isolating all raw DSI host access in one module
+- A combined build/clippy evidence file is sufficient for structural refactors when both required commands are captured verbatim in the same artifact
