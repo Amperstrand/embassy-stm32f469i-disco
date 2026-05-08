@@ -117,8 +117,9 @@ async fn main(spawner: Spawner) {
     let mut p = embassy_stm32::init(config);
 
     let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let framebuffer = sdram.into_bytes();
     let mut display = DisplayCtrl::new(
-        &sdram,
+        framebuffer,
         p.LTDC,
         p.DSIHOST,
         p.PJ2,

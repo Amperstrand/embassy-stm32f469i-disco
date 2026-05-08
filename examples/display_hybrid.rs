@@ -21,9 +21,13 @@ extern crate alloc;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embedded_graphics::{pixelcolor::Rgb888, prelude::*, primitives::{PrimitiveStyle, Rectangle}};
 use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
 use embassy_time::Timer;
+use embedded_graphics::{
+    pixelcolor::Rgb888,
+    prelude::*,
+    primitives::{PrimitiveStyle, Rectangle},
+};
 use linked_list_allocator::LockedHeap;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -40,7 +44,8 @@ const LCD_Y_SIZE: i32 = 800;
 async fn main(_spawner: Spawner) {
     #[allow(static_mut_refs)]
     unsafe {
-        HEAP.lock().init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
+        HEAP.lock()
+            .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
     }
 
     let mut p = embassy_stm32::init(config_180());
@@ -48,13 +53,14 @@ async fn main(_spawner: Spawner) {
 
     // ── SDRAM init (must be before moving peripherals out of p) ──
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let framebuffer = sdram.into_bytes();
     info!("display_hybrid: SDRAM initialized");
 
     // ── GPIO ──
     let mut led = Output::new(p.PG6, Level::High, Speed::Low);
 
     let mut display = embassy_stm32f469i_disco::DisplayCtrl::new(
-        &sdram,
+        framebuffer,
         p.LTDC,
         p.DSIHOST,
         p.PJ2,
@@ -67,15 +73,27 @@ async fn main(_spawner: Spawner) {
     fb.clear(Rgb888::BLACK);
 
     let rows_per_band = LCD_Y_SIZE / 4;
-    let colors = [Rgb888::new(255, 0, 0), Rgb888::new(0, 255, 0), Rgb888::new(0, 0, 255), Rgb888::new(255, 255, 255)];
+    let colors = [
+        Rgb888::new(255, 0, 0),
+        Rgb888::new(0, 255, 0),
+        Rgb888::new(0, 0, 255),
+        Rgb888::new(255, 255, 255),
+    ];
 
     for (band, color) in colors.iter().enumerate() {
         let y = band as i32 * rows_per_band;
-        let height = if band == 3 { LCD_Y_SIZE - y } else { rows_per_band };
-        Rectangle::new(Point::new(0, y), Size::new(LCD_X_SIZE as u32, height as u32))
-            .into_styled(PrimitiveStyle::with_fill(*color))
-            .draw(&mut fb)
-            .unwrap();
+        let height = if band == 3 {
+            LCD_Y_SIZE - y
+        } else {
+            rows_per_band
+        };
+        Rectangle::new(
+            Point::new(0, y),
+            Size::new(LCD_X_SIZE as u32, height as u32),
+        )
+        .into_styled(PrimitiveStyle::with_fill(*color))
+        .draw(&mut fb)
+        .unwrap();
     }
 
     info!("display_hybrid: framebuffer color bands drawn");

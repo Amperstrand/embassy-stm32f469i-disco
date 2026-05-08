@@ -133,3 +133,16 @@
 - Pure structural module splits can preserve downstream paths by re-exporting moved items from the original module
 - `BusyDelay` must remain duplicated across display/SDRAM modules unless delay concerns are extracted separately in a later task
 - `src/display.rs` depends on `SdramCtrl` only through framebuffer allocation, so the split is low-risk when FMC helpers move with the controller
+
+## [2026-05-08] Task 6: Make SDRAM framebuffer access consuming
+
+### Changes made
+- Replaced `SdramCtrl::subslice_mut(&self) -> &'static mut [T]` with consuming one-shot APIs: `into_framebuffer(self) -> &'static mut [u16]` and `into_bytes(self) -> &'static mut [u8]`
+- Added a `compile_fail` rustdoc example on `into_framebuffer()` showing the old double-borrow pattern now fails because `self` is moved
+- Changed `DisplayCtrl` constructors to take the owned SDRAM byte slice instead of `&SdramCtrl`, with pixel-typed framebuffer views derived internally from that slice
+- Updated all display examples to consume SDRAM before display init; raw examples now cast from the one-shot byte slice instead of partitioning via controller borrows
+
+### Lessons
+- Returning `&'static mut` from `&self` on a controller type is fundamentally unsound even if the underlying memory is fixed hardware-backed SDRAM
+- A consuming API cleanly encodes the one-owner invariant in the type system and makes the old aliasing bug fail at compile time instead of relying on caller discipline
+- APIs that only need framebuffer memory should take the slice directly; retaining the whole controller in display constructors unnecessarily preserves access to allocation capabilities

@@ -5,7 +5,8 @@ use defmt::info;
 use embassy_executor::Spawner;
 use embassy_stm32::i2c;
 use embassy_stm32f469i_disco::{
-    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, DisplayCtrlCtor, Rgb565, SYSCLK_HZ_180, TouchCtrl,
+    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, DisplayCtrlCtor, Rgb565, TouchCtrl,
+    SYSCLK_HZ_180,
 };
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -35,10 +36,17 @@ async fn main(_spawner: Spawner) {
 
     info!("display_touch_rgb565: init SDRAM...");
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let framebuffer = sdram.into_bytes();
 
     info!("display_touch_rgb565: init display...");
-    let mut display =
-        DisplayCtrl::<Rgb565>::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    let mut display = DisplayCtrl::<Rgb565>::new(
+        framebuffer,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
+        p.PH7,
+        BoardHint::ForceNt35510,
+    );
 
     info!("display_touch_rgb565: init framebuffer...");
     let mut fb = display.fb();
@@ -47,7 +55,8 @@ async fn main(_spawner: Spawner) {
     draw_overlay(&mut fb);
 
     info!("display_touch_rgb565: init touch...");
-    let mut i2c = embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
+    let mut i2c =
+        embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
     let touch = TouchCtrl::new();
 
     let mut last_touch = None::<Point>;
@@ -96,9 +105,14 @@ fn draw_background<D>(target: &mut D)
 where
     D: DrawTarget<Color = EgRgb565>,
 {
-    for (band, color) in [EgRgb565::RED, EgRgb565::GREEN, EgRgb565::BLUE, EgRgb565::WHITE]
-        .into_iter()
-        .enumerate()
+    for (band, color) in [
+        EgRgb565::RED,
+        EgRgb565::GREEN,
+        EgRgb565::BLUE,
+        EgRgb565::WHITE,
+    ]
+    .into_iter()
+    .enumerate()
     {
         Rectangle::new(
             Point::new(0, band as i32 * BAND_HEIGHT),
@@ -121,12 +135,22 @@ where
 
     let text_style = MonoTextStyle::new(&FONT_10X20, EgRgb565::WHITE);
 
-    Text::with_baseline("RGB565 + Touch", Point::new(164, 8), text_style, Baseline::Top)
-        .draw(target)
-        .ok();
-    Text::with_baseline("u16 / 2bpp / 480x800", Point::new(140, 36), text_style, Baseline::Top)
-        .draw(target)
-        .ok();
+    Text::with_baseline(
+        "RGB565 + Touch",
+        Point::new(164, 8),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(target)
+    .ok();
+    Text::with_baseline(
+        "u16 / 2bpp / 480x800",
+        Point::new(140, 36),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(target)
+    .ok();
 }
 
 fn draw_crosshair<D>(target: &mut D, point: Point, color: EgRgb565)
@@ -153,7 +177,9 @@ where
         .draw(target)
         .ok();
     for y in 0..HEIGHT {
-        Pixel(Point::new(point.x, y), band_color(y)).draw(target).ok();
+        Pixel(Point::new(point.x, y), band_color(y))
+            .draw(target)
+            .ok();
     }
 }
 

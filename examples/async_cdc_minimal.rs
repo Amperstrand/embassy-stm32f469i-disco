@@ -9,7 +9,9 @@ use panic_halt as _;
 #[cfg(feature = "defmt")]
 mod defmt_stubs {
     #[no_mangle]
-    unsafe extern "C" fn _defmt_acquire() -> usize { 0 }
+    unsafe extern "C" fn _defmt_acquire() -> usize {
+        0
+    }
     #[no_mangle]
     unsafe extern "C" fn _defmt_write(_data: *const u8, _len: usize) {}
     #[no_mangle]
@@ -17,9 +19,9 @@ mod defmt_stubs {
 }
 
 use embassy_executor::Spawner;
+use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::{interrupt::InterruptExt, peripherals, usb};
-use embassy_stm32::bind_interrupts;
 use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::Builder;
@@ -44,62 +46,33 @@ async fn main(_spawner: Spawner) {
 
     let mut p = embassy_stm32::init(config_168());
 
-    // USB PHY reset: after st-flash SYSRESETREQ, the USB OTG FS PHY retains
-    // stale state and won't re-enumerate. Cycling the RCC clock + core soft
-    // reset + PHY power cycle ensures a clean start. See gm65-scanner#57.
-    {
-        let rcc = stm32_metapac::RCC;
-
-        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(false));
-        cortex_m::asm::delay(100);
-        rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(true));
-
-        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(true));
-        cortex_m::asm::delay(100);
-        rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(false));
-        cortex_m::asm::delay(100);
-
-        let otg_global = 0x5000_0000usize as *mut u32;
-        // SAFETY: USB OTG FS register block at 0x5000_0000 is a fixed hardware
-        // address on STM32F469 (RM0386 §30). We access it before the embassy USB
-        // driver takes ownership, using volatile reads/writes for register-level
-        // reset sequencing. No aliasing — the driver hasn't been created yet.
-        unsafe {
-            let mut timeout = 100_000u32;
-            while otg_global.add(0x010 / 4).read_volatile() & (1 << 31) == 0 {
-                timeout -= 1;
-                if timeout == 0 { break; }
-            }
-            otg_global.add(0x010 / 4).write_volatile(1);
-            timeout = 100_000u32;
-            while otg_global.add(0x010 / 4).read_volatile() & 1 != 0 {
-                timeout -= 1;
-                if timeout == 0 { break; }
-            }
-            otg_global.add(0x038 / 4).write_volatile(0);
-            cortex_m::asm::delay(100);
-            otg_global.add(0x038 / 4).write_volatile(1 << 16);
-        }
-    }
+    embassy_stm32f469i_disco::reset_usb_phy();
 
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_168);
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
+    let framebuffer = sdram.into_bytes();
 
-    let display = embassy_stm32f469i_disco::DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, embassy_stm32f469i_disco::BoardHint::Auto);
+    let display = embassy_stm32f469i_disco::DisplayCtrl::new(
+        framebuffer,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
+        p.PH7,
+        embassy_stm32f469i_disco::BoardHint::Auto,
+    );
     let _ = display;
 
     embassy_stm32::interrupt::USART6.disable();
     let mut uart_config = embassy_stm32::usart::Config::default();
     uart_config.baudrate = 115200;
-    let _uart = embassy_stm32::usart::Uart::new_blocking(p.USART6, p.PG9, p.PG14, uart_config).unwrap();
+    let _uart =
+        embassy_stm32::usart::Uart::new_blocking(p.USART6, p.PG9, p.PG14, uart_config).unwrap();
 
     let i2c_config = embassy_stm32::i2c::Config::default();
     let _touch_i2c = embassy_stm32::i2c::I2c::new_blocking(p.I2C2, p.PB10, p.PB11, i2c_config);
 
     let mut led = Output::new(p.PG6, Level::Low, Speed::Low);
-    let _sdram_base = sdram.base_address();
-    let _sdram_ok = sdram.test_quick();
 
     let mut ep_out_buffer = [0u8; 256];
     let mut usb_config = usb::Config::default();

@@ -24,10 +24,12 @@ use embassy_stm32::dsihost::DsiHost;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
 use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
+use embassy_time::{block_for, Duration, Timer};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
-use embassy_time::{Duration, Timer, block_for};
 use nt35510::Nt35510;
-use otm8009a::{ColorMap as OtmColorMap, FrameRate as OtmFrameRate, Mode as OtmMode, Otm8009A, Otm8009AConfig};
+use otm8009a::{
+    ColorMap as OtmColorMap, FrameRate as OtmFrameRate, Mode as OtmMode, Otm8009A, Otm8009AConfig,
+};
 use panic_probe as _;
 
 const DSI_BASE: usize = 0x4001_6C00;
@@ -36,8 +38,6 @@ const RCC_BASE: usize = 0x4002_3800;
 
 const LCD_X_SIZE: u16 = 480;
 const LCD_Y_SIZE: u16 = 800;
-const FB_PIXELS: usize = LCD_X_SIZE as usize * LCD_Y_SIZE as usize;
-
 const DSI_WCFGR: usize = 0x400;
 const DSI_WCR: usize = 0x404;
 const DSI_WISR: usize = 0x40C;
@@ -192,7 +192,11 @@ impl RawDsi {
         self.wait_command_fifo_empty()?;
 
         if buf.len() > 2 {
-            self.raw_ghcr_write(0x37, (buf.len() & 0xff) as u8, ((buf.len() >> 8) & 0xff) as u8);
+            self.raw_ghcr_write(
+                0x37,
+                (buf.len() & 0xff) as u8,
+                ((buf.len() >> 8) & 0xff) as u8,
+            );
             self.wait_command_fifo_empty()?;
         }
 
@@ -271,7 +275,10 @@ fn detect_panel() -> Panel {
                 return Panel::Nt35510;
             }
             Err(nt35510::Error::ProbeMismatch(id)) => {
-                info!("panel detect: NT35510 mismatch attempt {} id=0x{:02x}", attempt, id);
+                info!(
+                    "panel detect: NT35510 mismatch attempt {} id=0x{:02x}",
+                    attempt, id
+                );
                 mismatch_count = mismatch_count.saturating_add(1);
                 match first_mismatch {
                     None => first_mismatch = Some(id),
@@ -342,8 +349,12 @@ async fn main(_spawner: Spawner) {
     reset.set_high();
     block_for(Duration::from_millis(140));
 
-    let fb: &'static mut [u16] = sdram.subslice_mut(0, FB_PIXELS);
-    info!("framebuffer: ptr=0x{:08x} len={}", fb.as_ptr() as u32, fb.len());
+    let fb: &'static mut [u16] = sdram.into_framebuffer();
+    info!(
+        "framebuffer: ptr=0x{:08x} len={}",
+        fb.as_ptr() as u32,
+        fb.len()
+    );
     fill_test_pattern(fb);
 
     let mut ltdc = Ltdc::new(p.LTDC);
@@ -505,7 +516,11 @@ async fn main(_spawner: Spawner) {
         reg32_write(LTDC_BASE, LTDC_L1_BASE + 0x14, 0x0000_00FF);
         reg32_write(LTDC_BASE, LTDC_L1_BASE + 0x1C, (7 << 8) | 4);
         reg32_write(LTDC_BASE, LTDC_L1_BASE + 0x28, fb.as_ptr() as u32);
-        reg32_write(LTDC_BASE, LTDC_L1_BASE + 0x2C, ((LCD_X_SIZE as u32 * 2 + 3) << 16) | (LCD_X_SIZE as u32 * 2));
+        reg32_write(
+            LTDC_BASE,
+            LTDC_L1_BASE + 0x2C,
+            ((LCD_X_SIZE as u32 * 2 + 3) << 16) | (LCD_X_SIZE as u32 * 2),
+        );
         reg32_write(LTDC_BASE, LTDC_L1_BASE + 0x30, LCD_Y_SIZE as u32);
         reg32_set(LTDC_BASE, LTDC_L1_BASE, 1);
         reg32_write(LTDC_BASE, LTDC_SRCR, 0x01);
@@ -541,7 +556,11 @@ unsafe fn raw_dsi_write_cmd(address: u8, data: &[u8]) {
 
     if data.len() <= 1 {
         let param = if data.len() == 1 { data[0] } else { 0 };
-        reg32_write(DSI_BASE, DSI_GHCR, (dt as u32) | ((param as u32) << 8) | ((address as u32) << 16));
+        reg32_write(
+            DSI_BASE,
+            DSI_GHCR,
+            (dt as u32) | ((param as u32) << 8) | ((address as u32) << 16),
+        );
     } else {
         let mut word = address as u32;
         for (i, &b) in data.iter().take(3).enumerate() {
@@ -685,14 +704,14 @@ const NT35510_PRE_SLEEP: &[&[u8]] = &[
 ];
 
 const NT35510_POST_SLEEP_PRE_DISPLAY: &[&[u8]] = &[
-    &[0x36, 0x00],                     // MADCTL Portrait
+    &[0x36, 0x00],                   // MADCTL Portrait
     &[0x2A, 0x00, 0x00, 0x01, 0xDF], // CASET
     &[0x2B, 0x00, 0x00, 0x03, 0x1F], // RASET
-    &[0x3A, 0x55],                     // COLMOD RGB565
-    &[0x51, 0x7F],                     // WRDISBV
-    &[0x53, 0x2C],                     // WRCTRLD BL_ON
-    &[0x55, 0x02],                     // WRCABC
-    &[0x5E, 0xFF],                     // WRCABCMB
+    &[0x3A, 0x55],                   // COLMOD RGB565
+    &[0x51, 0x7F],                   // WRDISBV
+    &[0x53, 0x2C],                   // WRCTRLD BL_ON
+    &[0x55, 0x02],                   // WRCABC
+    &[0x5E, 0xFF],                   // WRCABCMB
 ];
 
 const NT35510_POST_SLEEP_DISPLAY: &[&[u8]] = &[

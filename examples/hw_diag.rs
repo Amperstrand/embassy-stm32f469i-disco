@@ -8,7 +8,8 @@ extern crate panic_probe;
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::i2c;
 use embassy_stm32f469i_disco::{
-    config_180, display::SdramCtrl, SYSCLK_HZ_180, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
+    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
+    SYSCLK_HZ_180,
 };
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -574,12 +575,20 @@ async fn main(_spawner: embassy_executor::Spawner) {
         SYSCLK_HZ_180,
     );
     let base = sdram.base_address();
+    let framebuffer = sdram.into_bytes();
     let words = embassy_stm32f469i_disco::display::SDRAM_SIZE_BYTES / 4;
     let ram: &mut [u32] = unsafe { core::slice::from_raw_parts_mut(base as *mut u32, words) };
 
     // Display init
     defmt::info!("Display init...");
-    let mut display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, unsafe { p.PH7.clone_unchecked() }, BoardHint::Auto);
+    let mut display = DisplayCtrl::new(
+        framebuffer,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
+        unsafe { p.PH7.clone_unchecked() },
+        BoardHint::Auto,
+    );
     defmt::info!("Display init done");
     unsafe { tpass("Display Init") };
 

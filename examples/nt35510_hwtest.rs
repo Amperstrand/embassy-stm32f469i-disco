@@ -23,7 +23,9 @@ use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_stm32::dsihost;
 use embassy_stm32f469i_disco::display::SdramCtrl;
-use embassy_stm32f469i_disco::{config_180, BoardHint, DisplayCtrl, TouchCtrl, TouchPoint, SYSCLK_HZ_180};
+use embassy_stm32f469i_disco::{
+    config_180, BoardHint, DisplayCtrl, TouchCtrl, TouchPoint, SYSCLK_HZ_180,
+};
 use embassy_time::{block_for, Duration, Timer};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use embedded_graphics::{
@@ -114,7 +116,11 @@ impl<'a, 'd> DsiHostAdapter<'a, 'd> {
         self.wait_command_fifo_empty()?;
 
         if buf.len() > 2 {
-            self.raw_ghcr_write(0x37, (buf.len() & 0xff) as u8, ((buf.len() >> 8) & 0xff) as u8);
+            self.raw_ghcr_write(
+                0x37,
+                (buf.len() & 0xff) as u8,
+                ((buf.len() >> 8) & 0xff) as u8,
+            );
             self.wait_command_fifo_empty()?;
         }
 
@@ -258,9 +264,14 @@ fn draw_progress_screen(
             let _ = write!(&mut test_header, "Summary: {} tests complete", tests.len());
         }
     }
-    Text::with_baseline(&test_header, Point::new(12, 68), current_style, Baseline::Top)
-        .draw(&mut fb)
-        .ok();
+    Text::with_baseline(
+        &test_header,
+        Point::new(12, 68),
+        current_style,
+        Baseline::Top,
+    )
+    .draw(&mut fb)
+    .ok();
 
     for (idx, test) in tests.iter().enumerate() {
         let label_style = if Some(idx) == current_idx {
@@ -296,9 +307,14 @@ fn draw_progress_screen(
         .ok();
     }
 
-    Text::with_baseline("Look for:", Point::new(12, 732), current_style, Baseline::Top)
-        .draw(&mut fb)
-        .ok();
+    Text::with_baseline(
+        "Look for:",
+        Point::new(12, 732),
+        current_style,
+        Baseline::Top,
+    )
+    .draw(&mut fb)
+    .ok();
     Text::with_baseline(hint, Point::new(12, 760), hint_style, Baseline::Top)
         .draw(&mut fb)
         .ok();
@@ -330,7 +346,11 @@ fn draw_summary_screen(
         .build();
     let ok_style = MonoTextStyleBuilder::new()
         .font(&FONT_10X20)
-        .text_color(if failed == 0 { Rgb888::GREEN } else { Rgb888::RED })
+        .text_color(if failed == 0 {
+            Rgb888::GREEN
+        } else {
+            Rgb888::RED
+        })
         .build();
     let body_style = MonoTextStyleBuilder::new()
         .font(&FONT_10X20)
@@ -385,7 +405,10 @@ fn draw_summary_screen(
             .ok();
     } else {
         let mut y = 152;
-        for test in tests.iter().filter(|test| matches!(test.state, TestState::Fail)) {
+        for test in tests
+            .iter()
+            .filter(|test| matches!(test.state, TestState::Fail))
+        {
             Text::with_baseline(test.label, Point::new(12, y), fail_style, Baseline::Top)
                 .draw(&mut fb)
                 .ok();
@@ -402,9 +425,14 @@ fn draw_summary_screen(
             let _ = write!(&mut vendor_line, "Touch vendor ID: read failed");
         }
     }
-    Text::with_baseline(&vendor_line, Point::new(12, 540), touch_style, Baseline::Top)
-        .draw(&mut fb)
-        .ok();
+    Text::with_baseline(
+        &vendor_line,
+        Point::new(12, 540),
+        touch_style,
+        Baseline::Top,
+    )
+    .draw(&mut fb)
+    .ok();
 
     let mut touch_line: String<96> = String::new();
     if touch_points.is_empty() {
@@ -457,7 +485,15 @@ async fn main(_spawner: Spawner) {
 
     let mut p = embassy_stm32::init(config_180());
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
-    let mut display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    let framebuffer = sdram.into_bytes();
+    let mut display = DisplayCtrl::new(
+        framebuffer,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
+        p.PH7,
+        BoardHint::ForceNt35510,
+    );
 
     let mut tests = [
         TestLine {
@@ -526,7 +562,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         panel.probe(&mut adapter).is_ok()
     };
-    tests[0].state = if probe_ok { TestState::Pass } else { TestState::Fail };
+    tests[0].state = if probe_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -541,7 +581,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         matches!(panel.id_matches(&mut adapter), Ok(true))
     };
-    tests[1].state = if id_ok { TestState::Pass } else { TestState::Fail };
+    tests[1].state = if id_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -557,7 +601,11 @@ async fn main(_spawner: Spawner) {
         let mut delay = BusyDelay;
         panel.init(&mut adapter, &mut delay).is_ok()
     };
-    tests[3].state = if init_ok { TestState::Pass } else { TestState::Fail };
+    tests[3].state = if init_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -572,7 +620,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         panel.set_brightness(&mut adapter, 0xFF).is_ok()
     };
-    tests[4].state = if max_ok { TestState::Pass } else { TestState::Fail };
+    tests[4].state = if max_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -586,11 +638,15 @@ async fn main(_spawner: Spawner) {
     const SWEEP_LEVELS: [u8; 9] = [0xFF, 0xC0, 0x80, 0x40, 0x10, 0x40, 0x80, 0xC0, 0xFF];
     let mut panel = Nt35510::new();
     let mut adapter = DsiHostAdapter::new(display.dsi());
-    let sweep_ok = SWEEP_LEVELS.iter().all(|&level| {
-        panel.set_brightness(&mut adapter, level).is_ok()
-    });
+    let sweep_ok = SWEEP_LEVELS
+        .iter()
+        .all(|&level| panel.set_brightness(&mut adapter, level).is_ok());
     let _ = panel.set_brightness(&mut adapter, 0xFF);
-    tests[5].state = if sweep_ok { TestState::Pass } else { TestState::Fail };
+    tests[5].state = if sweep_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -606,7 +662,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         panel.set_backlight(&mut adapter, false).is_ok()
     };
-    tests[6].state = if backlight_off_ok { TestState::Pass } else { TestState::Fail };
+    tests[6].state = if backlight_off_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     Timer::after_millis(OBSERVE_DELAY_MS).await;
 
     let backlight_on_ok = {
@@ -614,7 +674,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         panel.set_backlight(&mut adapter, true).is_ok()
     };
-    tests[7].state = if backlight_on_ok { TestState::Pass } else { TestState::Fail };
+    tests[7].state = if backlight_on_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -627,9 +691,14 @@ async fn main(_spawner: Spawner) {
     let te_ok = {
         let mut panel = Nt35510::new();
         let mut adapter = DsiHostAdapter::new(display.dsi());
-        panel.enable_te_output(0, &mut adapter).is_ok() && panel.disable_te_output(&mut adapter).is_ok()
+        panel.enable_te_output(0, &mut adapter).is_ok()
+            && panel.disable_te_output(&mut adapter).is_ok()
     };
-    tests[8].state = if te_ok { TestState::Pass } else { TestState::Fail };
+    tests[8].state = if te_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -639,7 +708,12 @@ async fn main(_spawner: Spawner) {
     )
     .await;
 
-    draw_progress_screen(&mut display, &tests, Some(9), "Panel will blank then re-init.");
+    draw_progress_screen(
+        &mut display,
+        &tests,
+        Some(9),
+        "Panel will blank then re-init.",
+    );
     let sleep_ok = {
         let mut panel = Nt35510::new();
         let mut adapter = DsiHostAdapter::new(display.dsi());
@@ -660,7 +734,11 @@ async fn main(_spawner: Spawner) {
     } else {
         false
     };
-    tests[9].state = if reinit_ok { TestState::Pass } else { TestState::Fail };
+    tests[9].state = if reinit_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -675,7 +753,11 @@ async fn main(_spawner: Spawner) {
         let mut adapter = DsiHostAdapter::new(display.dsi());
         panel.set_brightness(&mut adapter, 0x40).is_ok()
     };
-    tests[10].state = if mid_ok { TestState::Pass } else { TestState::Fail };
+    tests[10].state = if mid_ok {
+        TestState::Pass
+    } else {
+        TestState::Fail
+    };
     show_step(
         &mut display,
         &tests,
@@ -729,37 +811,45 @@ async fn main(_spawner: Spawner) {
                             touch_result.point = Some(point);
                             dots_collected += 1;
 
-                            Rectangle::new(
-                                Point::new(cx - 20, cy - 20),
-                                Size::new(40, 40),
-                            )
-                            .into_styled(PrimitiveStyle::with_fill(Rgb888::new(0, 200, 255)))
-                            .draw(&mut display.fb())
-                            .ok();
+                            Rectangle::new(Point::new(cx - 20, cy - 20), Size::new(40, 40))
+                                .into_styled(PrimitiveStyle::with_fill(Rgb888::new(0, 200, 255)))
+                                .draw(&mut display.fb())
+                                .ok();
 
-                            let coord_style =
-                                MonoTextStyleBuilder::new().font(&FONT_10X20).text_color(Rgb888::WHITE).build();
+                            let coord_style = MonoTextStyleBuilder::new()
+                                .font(&FONT_10X20)
+                                .text_color(Rgb888::WHITE)
+                                .build();
                             let mut coord_text: String<32> = String::new();
                             let _ = write!(&mut coord_text, "({},{})", cx, cy);
                             let label_y = if cy > 400 { cy - 30 } else { cy + 24 };
-                            Text::with_baseline(&coord_text, Point::new(cx, label_y), coord_style, Baseline::Top)
-                                .draw(&mut display.fb())
-                                .ok();
+                            Text::with_baseline(
+                                &coord_text,
+                                Point::new(cx, label_y),
+                                coord_style,
+                                Baseline::Top,
+                            )
+                            .draw(&mut display.fb())
+                            .ok();
 
                             let mut counter: String<64> = String::new();
                             let _ = write!(
                                 &mut counter,
                                 "Dot {}/{} collected.",
-                                dots_collected,
-                                TOUCH_DOTS_TARGET
+                                dots_collected, TOUCH_DOTS_TARGET
                             );
                             let hint_style = MonoTextStyleBuilder::new()
                                 .font(&FONT_10X20)
                                 .text_color(Rgb888::new(255, 220, 0))
                                 .build();
-                            Text::with_baseline(&counter, Point::new(12, 760), hint_style, Baseline::Top)
-                                .draw(&mut display.fb())
-                                .ok();
+                            Text::with_baseline(
+                                &counter,
+                                Point::new(12, 760),
+                                hint_style,
+                                Baseline::Top,
+                            )
+                            .draw(&mut display.fb())
+                            .ok();
 
                             Timer::after_millis(200).await;
                             continue;

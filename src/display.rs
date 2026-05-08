@@ -544,6 +544,20 @@ fn configure_ltdc_layer<F: DisplayFormat>(
     LTDC.srcr().modify(|w| w.set_imr(Imr::RELOAD));
 }
 
+fn framebuffer_from_bytes<F: DisplayFormat>(
+    bytes: &'static mut [u8],
+    len_pixels: usize,
+) -> &'static mut [F::Pixel] {
+    let required_bytes = len_pixels * F::bpp();
+    assert!(bytes.len() >= required_bytes);
+    assert_eq!(
+        (bytes.as_mut_ptr() as usize) % core::mem::align_of::<F::Pixel>(),
+        0
+    );
+
+    unsafe { &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels) }
+}
+
 struct DsiHostAdapter<'a, 'd> {
     dsi: &'a mut dsihost::DsiHost<'d, peripherals::DSIHOST>,
 }
@@ -745,7 +759,7 @@ pub struct DisplayCtrl<'d, F: DisplayFormat = Argb8888> {
 
 impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
     fn try_new_internal(
-        sdram: &SdramCtrl,
+        framebuffer_bytes: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -776,7 +790,7 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: dsi init done (not yet enabled)");
 
-        let fb_slice: &'static mut [F::Pixel] = sdram.subslice_mut(0, orientation.fb_size());
+        let fb_slice = framebuffer_from_bytes::<F>(framebuffer_bytes, orientation.fb_size());
         let fb_addr = fb_slice.as_mut_ptr() as u32;
         configure_ltdc(&mut ltdc, orientation);
 
@@ -921,18 +935,19 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
 
 impl<'d> DisplayCtrl<'d> {
     pub fn new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
         lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
     ) -> Self {
-        Self::try_new(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint).expect("display init failed")
+        Self::try_new(framebuffer, ltdc, dsi_host, dsi_te, lcd_reset, hint)
+            .expect("display init failed")
     }
 
     pub fn try_new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -940,7 +955,7 @@ impl<'d> DisplayCtrl<'d> {
         hint: BoardHint,
     ) -> Result<Self, DisplayInitError> {
         Self::try_new_with_orientation(
-            sdram,
+            framebuffer,
             ltdc,
             dsi_host,
             dsi_te,
@@ -951,7 +966,7 @@ impl<'d> DisplayCtrl<'d> {
     }
 
     pub fn new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -959,12 +974,20 @@ impl<'d> DisplayCtrl<'d> {
         hint: BoardHint,
         orientation: DisplayOrientation,
     ) -> Self {
-        Self::try_new_with_orientation(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint, orientation)
-            .expect("display init failed")
+        Self::try_new_with_orientation(
+            framebuffer,
+            ltdc,
+            dsi_host,
+            dsi_te,
+            lcd_reset,
+            hint,
+            orientation,
+        )
+        .expect("display init failed")
     }
 
     pub fn try_new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -973,7 +996,7 @@ impl<'d> DisplayCtrl<'d> {
         orientation: DisplayOrientation,
     ) -> Result<Self, DisplayInitError> {
         DisplayCtrl::<'d, Argb8888>::try_new_internal(
-            sdram,
+            framebuffer,
             ltdc,
             dsi_host,
             dsi_te,
@@ -986,7 +1009,7 @@ impl<'d> DisplayCtrl<'d> {
 
 pub trait DisplayCtrlCtor<'d>: Sized {
     fn new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -995,7 +1018,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
     ) -> Self;
 
     fn try_new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1004,7 +1027,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
     ) -> Result<Self, DisplayInitError>;
 
     fn new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1014,7 +1037,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
     ) -> Self;
 
     fn try_new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1026,18 +1049,19 @@ pub trait DisplayCtrlCtor<'d>: Sized {
 
 impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
     fn new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
         lcd_reset: embassy_stm32::Peri<'d, impl embassy_stm32::gpio::Pin>,
         hint: BoardHint,
     ) -> Self {
-        Self::try_new(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint).expect("display init failed")
+        Self::try_new(framebuffer, ltdc, dsi_host, dsi_te, lcd_reset, hint)
+            .expect("display init failed")
     }
 
     fn try_new(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1045,7 +1069,7 @@ impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
         hint: BoardHint,
     ) -> Result<Self, DisplayInitError> {
         Self::try_new_with_orientation(
-            sdram,
+            framebuffer,
             ltdc,
             dsi_host,
             dsi_te,
@@ -1056,7 +1080,7 @@ impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
     }
 
     fn new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1064,12 +1088,20 @@ impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
         hint: BoardHint,
         orientation: DisplayOrientation,
     ) -> Self {
-        Self::try_new_with_orientation(sdram, ltdc, dsi_host, dsi_te, lcd_reset, hint, orientation)
-            .expect("display init failed")
+        Self::try_new_with_orientation(
+            framebuffer,
+            ltdc,
+            dsi_host,
+            dsi_te,
+            lcd_reset,
+            hint,
+            orientation,
+        )
+        .expect("display init failed")
     }
 
     fn try_new_with_orientation(
-        sdram: &SdramCtrl,
+        framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
         dsi_host: Peri<'d, peripherals::DSIHOST>,
         dsi_te: Peri<'d, impl dsihost::TePin<peripherals::DSIHOST>>,
@@ -1078,7 +1110,7 @@ impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
         orientation: DisplayOrientation,
     ) -> Result<Self, DisplayInitError> {
         DisplayCtrl::<'d, Rgb565>::try_new_internal(
-            sdram,
+            framebuffer,
             ltdc,
             dsi_host,
             dsi_te,

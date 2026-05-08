@@ -123,12 +123,37 @@ impl SdramCtrl {
         self.mem as usize
     }
 
-    /// Borrow a typed mutable slice from SDRAM at a byte offset.
-    pub fn subslice_mut<T>(&self, offset_bytes: usize, len: usize) -> &'static mut [T] {
-        let start = (self.mem as usize) + offset_bytes;
-        let end = start + len * core::mem::size_of::<T>();
-        assert!(end <= (self.mem as usize) + SDRAM_SIZE_BYTES);
-        unsafe { &mut *core::ptr::slice_from_raw_parts_mut(start as *mut T, len) }
+    fn into_slice<T>(self) -> &'static mut [T] {
+        let len = SDRAM_SIZE_BYTES / core::mem::size_of::<T>();
+        unsafe { &mut *core::ptr::slice_from_raw_parts_mut(self.mem.cast::<T>(), len) }
+    }
+
+    /// Consume the controller and yield the full SDRAM region as a mutable framebuffer slice.
+    ///
+    /// This is a one-shot operation. The SDRAM is not partitionable after this call.
+    /// If multiple regions are needed, a future API may add `into_partitions()`.
+    ///
+    /// # Safety
+    /// The returned slice covers the entire SDRAM region. The caller must ensure
+    /// no other code aliases this memory.
+    ///
+    /// ```compile_fail
+    /// # use embassy_stm32f469i_disco::SdramCtrl;
+    /// # fn demo(sdram: SdramCtrl) {
+    /// let fb1 = sdram.into_framebuffer();
+    /// let fb2 = sdram.into_framebuffer(); // ERROR: use of moved value
+    /// # let _ = (fb1, fb2);
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn into_framebuffer(self) -> &'static mut [u16] {
+        self.into_slice()
+    }
+
+    /// Consume the controller and yield the full SDRAM region as raw bytes.
+    #[must_use]
+    pub fn into_bytes(self) -> &'static mut [u8] {
+        self.into_slice()
     }
 
     /// Run a quick destructive SDRAM smoke test over the first 4 KiB.

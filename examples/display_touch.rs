@@ -4,7 +4,9 @@
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_stm32::i2c;
-use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, BoardHint, DisplayCtrl, SYSCLK_HZ_180, TouchCtrl};
+use embassy_stm32f469i_disco::{
+    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, SYSCLK_HZ_180,
+};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
@@ -33,9 +35,17 @@ async fn main(_spawner: Spawner) {
 
     info!("display_touch: init SDRAM...");
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let framebuffer = sdram.into_bytes();
 
     info!("display_touch: init display...");
-    let mut display = DisplayCtrl::new(&sdram, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, BoardHint::ForceNt35510);
+    let mut display = DisplayCtrl::new(
+        framebuffer,
+        p.LTDC,
+        p.DSIHOST,
+        p.PJ2,
+        p.PH7,
+        BoardHint::ForceNt35510,
+    );
 
     info!("display_touch: init framebuffer...");
     let mut fb = display.fb();
@@ -44,7 +54,8 @@ async fn main(_spawner: Spawner) {
     draw_overlay(&mut fb);
 
     info!("display_touch: init touch...");
-    let mut i2c = embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
+    let mut i2c =
+        embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
     let touch = TouchCtrl::new();
 
     let mut last_touch = None::<Point>;
@@ -118,12 +129,22 @@ where
 
     let text_style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
 
-    Text::with_baseline("ARGB8888 + Touch", Point::new(160, 8), text_style, Baseline::Top)
-        .draw(target)
-        .ok();
-    Text::with_baseline("u32 / 4bpp / 480x800", Point::new(140, 36), text_style, Baseline::Top)
-        .draw(target)
-        .ok();
+    Text::with_baseline(
+        "ARGB8888 + Touch",
+        Point::new(160, 8),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(target)
+    .ok();
+    Text::with_baseline(
+        "u32 / 4bpp / 480x800",
+        Point::new(140, 36),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(target)
+    .ok();
 }
 
 fn draw_crosshair<D>(target: &mut D, point: Point, color: Rgb888)
@@ -150,7 +171,9 @@ where
         .draw(target)
         .ok();
     for y in 0..HEIGHT {
-        Pixel(Point::new(point.x, y), band_color(y)).draw(target).ok();
+        Pixel(Point::new(point.x, y), band_color(y))
+            .draw(target)
+            .ok();
     }
 }
 

@@ -22,7 +22,7 @@ use embassy_stm32::dsihost::{DsiHost, PacketType};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
 use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
-use embassy_time::{Duration, Timer, block_for};
+use embassy_time::{block_for, Duration, Timer};
 use linked_list_allocator::LockedHeap;
 use stm32_metapac::dsihost::regs::{Ier0, Ier1};
 use stm32_metapac::ltdc::vals::{Bf1, Bf2, Depol, Hspol, Imr, Pcpol, Pf, Vspol};
@@ -104,6 +104,7 @@ async fn main(_spawner: Spawner) {
 
     // ── SDRAM init (must be before moving peripherals out of p) ──
     let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let framebuffer = sdram.into_bytes();
     info!("display_minimal: SDRAM initialized");
 
     // ── GPIO ──
@@ -271,8 +272,12 @@ async fn main(_spawner: Spawner) {
     DSIHOST.wcfgr().modify(|w| w.set_colmux(COLOR_CODING));
 
     // DSI timing (lane byte clock cycles)
-    DSIHOST.vhsacr().modify(|w| w.set_hsa(HORIZONTAL_SYNC_ACTIVE));
-    DSIHOST.vhbpcr().modify(|w| w.set_hbp(HORIZONTAL_BACK_PORCH));
+    DSIHOST
+        .vhsacr()
+        .modify(|w| w.set_hsa(HORIZONTAL_SYNC_ACTIVE));
+    DSIHOST
+        .vhbpcr()
+        .modify(|w| w.set_hbp(HORIZONTAL_BACK_PORCH));
     DSIHOST.vlcr().modify(|w| w.set_hline(HORIZONTAL_LINE));
     DSIHOST.vvsacr().modify(|w| w.set_vsa(VERTICAL_SYNC_ACTIVE));
     DSIHOST.vvbpcr().modify(|w| w.set_vbp(VERTICAL_BACK_PORCH));
@@ -281,17 +286,37 @@ async fn main(_spawner: Spawner) {
 
     DSIHOST.vmcr().modify(|w| w.set_lpce(LP_COMMAND_ENABLE));
 
-    DSIHOST.lpmcr().modify(|w| w.set_lpsize(LP_LARGEST_PACKET_SIZE));
-    DSIHOST.lpmcr().modify(|w| w.set_lpsize(LP_LARGEST_PACKET_SIZE));
-    DSIHOST.lpmcr().modify(|w| w.set_vlpsize(LPVACT_LARGEST_PACKET_SIZE));
+    DSIHOST
+        .lpmcr()
+        .modify(|w| w.set_lpsize(LP_LARGEST_PACKET_SIZE));
+    DSIHOST
+        .lpmcr()
+        .modify(|w| w.set_lpsize(LP_LARGEST_PACKET_SIZE));
+    DSIHOST
+        .lpmcr()
+        .modify(|w| w.set_vlpsize(LPVACT_LARGEST_PACKET_SIZE));
 
-    DSIHOST.vmcr().modify(|w| w.set_lphfpe(LPHORIZONTAL_FRONT_PORCH_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_lphbpe(LPHORIZONTAL_BACK_PORCH_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_lpvae(LPVERTICAL_ACTIVE_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_lpvfpe(LPVERTICAL_FRONT_PORCH_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_lpvbpe(LPVERTICAL_BACK_PORCH_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_lpvsae(LPVERTICAL_SYNC_ACTIVE_ENABLE));
-    DSIHOST.vmcr().modify(|w| w.set_fbtaae(FRAME_BTAACKNOWLEDGE_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lphfpe(LPHORIZONTAL_FRONT_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lphbpe(LPHORIZONTAL_BACK_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvae(LPVERTICAL_ACTIVE_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvfpe(LPVERTICAL_FRONT_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvbpe(LPVERTICAL_BACK_PORCH_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_lpvsae(LPVERTICAL_SYNC_ACTIVE_ENABLE));
+    DSIHOST
+        .vmcr()
+        .modify(|w| w.set_fbtaae(FRAME_BTAACKNOWLEDGE_ENABLE));
 
     // PHY HS2LP and LP2HS timings
     const CLOCK_LANE_HS2_LPTIME: u16 = 35;
@@ -332,9 +357,11 @@ async fn main(_spawner: Spawner) {
     const ACCUMULATED_HBP: u16 = HSA + HBP - 1; // 35
     const ACCUMULATED_VBP: u16 = VERTICAL_SYNC_ACTIVE + VERTICAL_BACK_PORCH - 1; // 269
     const ACCUMULATED_ACTIVE_W: u16 = LCD_X_SIZE + HSA + HBP - 1; // 515
-    const ACCUMULATED_ACTIVE_H: u16 = VERTICAL_SYNC_ACTIVE + VERTICAL_BACK_PORCH + VERTICAL_ACTIVE - 1; // 1069
+    const ACCUMULATED_ACTIVE_H: u16 =
+        VERTICAL_SYNC_ACTIVE + VERTICAL_BACK_PORCH + VERTICAL_ACTIVE - 1; // 1069
     const TOTAL_WIDTH: u16 = LCD_X_SIZE + HSA + HBP + HFP - 1; // 549
-    const TOTAL_HEIGHT: u16 = VERTICAL_SYNC_ACTIVE + VERTICAL_BACK_PORCH + VERTICAL_ACTIVE + VERTICAL_FRONT_PORCH - 1; // 1219
+    const TOTAL_HEIGHT: u16 =
+        VERTICAL_SYNC_ACTIVE + VERTICAL_BACK_PORCH + VERTICAL_ACTIVE + VERTICAL_FRONT_PORCH - 1; // 1219
 
     ltdc.disable();
 
@@ -387,63 +414,100 @@ async fn main(_spawner: Spawner) {
 
     // ── NT35510 panel init (hardcoded commands from working example) ──
 
-    dsi.write_cmd(0, NT35510_WRITES_0[0], &NT35510_WRITES_0[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_1[0], &NT35510_WRITES_1[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_2[0], &NT35510_WRITES_2[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_3[0], &NT35510_WRITES_3[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_4[0], &NT35510_WRITES_4[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_5[0], &NT35510_WRITES_5[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_6[0], &NT35510_WRITES_6[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_7[0], &NT35510_WRITES_7[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_8[0], &NT35510_WRITES_8[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_9[0], &NT35510_WRITES_9[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_10[0], &NT35510_WRITES_10[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_12[0], &NT35510_WRITES_12[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_13[0], &NT35510_WRITES_13[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_14[0], &NT35510_WRITES_14[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_15[0], &NT35510_WRITES_15[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_16[0], &NT35510_WRITES_16[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_17[0], &NT35510_WRITES_17[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_18[0], &NT35510_WRITES_18[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_19[0], &NT35510_WRITES_19[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_20[0], &NT35510_WRITES_20[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_21[0], &NT35510_WRITES_21[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_22[0], &NT35510_WRITES_22[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_23[0], &NT35510_WRITES_23[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_24[0], &NT35510_WRITES_24[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_0[0], &NT35510_WRITES_0[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_1[0], &NT35510_WRITES_1[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_2[0], &NT35510_WRITES_2[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_3[0], &NT35510_WRITES_3[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_4[0], &NT35510_WRITES_4[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_5[0], &NT35510_WRITES_5[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_6[0], &NT35510_WRITES_6[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_7[0], &NT35510_WRITES_7[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_8[0], &NT35510_WRITES_8[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_9[0], &NT35510_WRITES_9[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_10[0], &NT35510_WRITES_10[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_12[0], &NT35510_WRITES_12[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_13[0], &NT35510_WRITES_13[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_14[0], &NT35510_WRITES_14[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_15[0], &NT35510_WRITES_15[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_16[0], &NT35510_WRITES_16[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_17[0], &NT35510_WRITES_17[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_18[0], &NT35510_WRITES_18[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_19[0], &NT35510_WRITES_19[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_20[0], &NT35510_WRITES_20[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_21[0], &NT35510_WRITES_21[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_22[0], &NT35510_WRITES_22[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_23[0], &NT35510_WRITES_23[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_24[0], &NT35510_WRITES_24[1..])
+        .unwrap();
 
     // Tear on
-    dsi.write_cmd(0, NT35510_WRITES_26[0], &NT35510_WRITES_26[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_26[0], &NT35510_WRITES_26[1..])
+        .unwrap();
 
     // Set pixel color format to RGB888
-    dsi.write_cmd(0, NT35510_WRITES_37[0], &NT35510_WRITES_37[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_37[0], &NT35510_WRITES_37[1..])
+        .unwrap();
 
     // Delay for MADCTL to take effect
     block_for(Duration::from_millis(200));
 
     // Portrait orientation
-    dsi.write_cmd(0, NT35510_MADCTL_PORTRAIT[0], &NT35510_MADCTL_PORTRAIT[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_CASET_PORTRAIT[0], &NT35510_CASET_PORTRAIT[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_RASET_PORTRAIT[0], &NT35510_RASET_PORTRAIT[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_MADCTL_PORTRAIT[0], &NT35510_MADCTL_PORTRAIT[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_CASET_PORTRAIT[0], &NT35510_CASET_PORTRAIT[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_RASET_PORTRAIT[0], &NT35510_RASET_PORTRAIT[1..])
+        .unwrap();
 
     // Sleep out
-    dsi.write_cmd(0, NT35510_WRITES_27[0], &NT35510_WRITES_27[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_27[0], &NT35510_WRITES_27[1..])
+        .unwrap();
     block_for(Duration::from_millis(120));
 
     // Color coding again
-    dsi.write_cmd(0, NT35510_WRITES_37[0], &NT35510_WRITES_37[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_37[0], &NT35510_WRITES_37[1..])
+        .unwrap();
 
     // CABC (backlight brightness)
-    dsi.write_cmd(0, NT35510_WRITES_31[0], &NT35510_WRITES_31[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_32[0], &NT35510_WRITES_32[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_33[0], &NT35510_WRITES_33[1..]).unwrap();
-    dsi.write_cmd(0, NT35510_WRITES_34[0], &NT35510_WRITES_34[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_31[0], &NT35510_WRITES_31[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_32[0], &NT35510_WRITES_32[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_33[0], &NT35510_WRITES_33[1..])
+        .unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_34[0], &NT35510_WRITES_34[1..])
+        .unwrap();
 
     // Display on
-    dsi.write_cmd(0, NT35510_WRITES_30[0], &NT35510_WRITES_30[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_30[0], &NT35510_WRITES_30[1..])
+        .unwrap();
 
     // GRAM memory write (initiate frame write in video mode)
-    dsi.write_cmd(0, NT35510_WRITES_35[0], &NT35510_WRITES_35[1..]).unwrap();
+    dsi.write_cmd(0, NT35510_WRITES_35[0], &NT35510_WRITES_35[1..])
+        .unwrap();
 
     info!("display_minimal: NT35510 init done");
 
@@ -454,7 +518,12 @@ async fn main(_spawner: Spawner) {
     const IMAGE_WIDTH: u16 = LCD_X_SIZE;
     const IMAGE_HEIGHT: u16 = LCD_Y_SIZE;
 
-    let fb: &'static mut [u32] = sdram.subslice_mut(0, LCD_X_SIZE as usize * LCD_Y_SIZE as usize);
+    let fb: &'static mut [u32] = unsafe {
+        &mut *core::ptr::slice_from_raw_parts_mut(
+            framebuffer.as_mut_ptr().cast(),
+            LCD_X_SIZE as usize * LCD_Y_SIZE as usize,
+        )
+    };
     let fb_addr = fb.as_mut_ptr() as u32;
     info!("display_minimal: fb addr={:010x} len={}", fb_addr, fb.len());
 
@@ -519,7 +588,9 @@ async fn main(_spawner: Spawner) {
     });
 
     // Frame buffer line number
-    LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(IMAGE_HEIGHT));
+    LTDC.layer(0)
+        .cfblnr()
+        .write(|w| w.set_cfblnbr(IMAGE_HEIGHT));
 
     // Enable layer
     LTDC.layer(0).cr().modify(|w| w.set_len(true));
