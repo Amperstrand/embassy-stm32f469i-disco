@@ -900,8 +900,8 @@ checksum = "8d5439c4ad607c3c23abf66de8c8bf57ba8adcd1f129e699851a6e43935d339d"
 
 [[package]]
 name = "nt35510"
-version = "0.2.0"
-source = "git+https://github.com/Amperstrand/nt35510?rev=263d8e4#263d8e41643908e6b1176a9cd81b12bb43c346ae"
+version = "0.2.1"
+source = "git+https://github.com/Amperstrand/nt35510?rev=49a372c#49a372cd00389b1df5862a8cfbbcdfb2a022bb24"
 dependencies = [
  "embedded-display-controller",
  "embedded-hal 1.0.0",
