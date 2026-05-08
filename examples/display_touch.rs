@@ -54,9 +54,9 @@ async fn main(_spawner: Spawner) {
     draw_overlay(&mut fb);
 
     info!("display_touch: init touch...");
-    let mut i2c =
+    let i2c =
         embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
-    let touch = TouchCtrl::new();
+    let mut touch = TouchCtrl::new(i2c);
 
     let mut last_touch = None::<Point>;
     let mut idle_ms = IDLE_CLEAR_MS;
@@ -64,8 +64,8 @@ async fn main(_spawner: Spawner) {
     loop {
         let mut touched = false;
 
-        match touch.td_status(&mut i2c) {
-            Ok(status) if status > 0 => match touch.get_touch(&mut i2c) {
+        match touch.td_status() {
+            Ok(status) if status > 0 => match touch.get_touch() {
                 Ok(point) if valid_touch(point.x, point.y) => {
                     let point = Point::new(point.x as i32, point.y as i32);
                     info!("Touch: x={}, y={}", point.x, point.y);

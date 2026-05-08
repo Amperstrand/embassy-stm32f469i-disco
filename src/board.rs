@@ -46,7 +46,9 @@ pub struct Board {
 }
 
 impl Board {
-    /// Initialize SDRAM, display, touch controller handle, LEDs, and user button.
+    /// Initialize SDRAM, display, touch controller, LEDs, and user button.
+    ///
+    /// Consumes I2C1 (PB8/PB9) for the touch controller.
     #[must_use]
     pub fn new(mut p: Peripherals, hint: BoardHint) -> Self {
         let source_clock_hz = rcc::clocks(&p.RCC)
@@ -58,7 +60,14 @@ impl Board {
         let sdram = SdramCtrl::new(&mut p, source_clock_hz);
         let framebuffer = sdram.into_bytes();
         let display = DisplayCtrl::new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, hint);
-        let touch = TouchCtrl::new();
+
+        let i2c = embassy_stm32::i2c::I2c::new_blocking(
+            p.I2C1,
+            p.PB8,
+            p.PB9,
+            embassy_stm32::i2c::Config::default(),
+        );
+        let touch = TouchCtrl::new(i2c);
 
         let leds = Leds {
             green: Output::new(p.PG6, Level::High, Speed::Low),

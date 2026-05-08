@@ -771,15 +771,15 @@ async fn main(_spawner: Spawner) {
         vendor_id: None,
         point: None,
     };
-    let mut touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
+    let touch_i2c = embassy_stm32::i2c::I2c::new_blocking(
         p.I2C1,
         p.PB8,
         p.PB9,
         embassy_stm32::i2c::Config::default(),
     );
-    let touch_ctrl = TouchCtrl::new();
+    let mut touch_ctrl = TouchCtrl::new(touch_i2c);
 
-    let vendor_ok = match touch_ctrl.read_vendor_id(&mut touch_i2c) {
+    let vendor_ok = match touch_ctrl.read_vendor_id() {
         Ok(vendor_id) => {
             touch_result.vendor_id = Some(vendor_id);
             vendor_id == 0x11
@@ -801,9 +801,9 @@ async fn main(_spawner: Spawner) {
 
         let mut remaining_ms = TOUCH_TIMEOUT_MS;
         while remaining_ms > 0 && dots_collected < TOUCH_DOTS_TARGET {
-            if let Ok(status) = touch_ctrl.td_status(&mut touch_i2c) {
+            if let Ok(status) = touch_ctrl.td_status() {
                 if status > 0 {
-                    if let Ok(point) = touch_ctrl.get_touch(&mut touch_i2c) {
+                    if let Ok(point) = touch_ctrl.get_touch() {
                         if valid_touch(&point) {
                             let cx = point.x as i32;
                             let cy = point.y as i32;

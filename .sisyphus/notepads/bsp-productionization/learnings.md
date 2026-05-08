@@ -213,3 +213,40 @@
 ### Lessons
 - For ergonomic board wrappers in Embassy BSPs, deriving SDRAM timing from `rcc::clocks(&p.RCC).hclk1.to_hertz()` avoids hard-coding 180 MHz and keeps `Board::new` compatible with alternate valid clock presets
 - Gating whole-board convenience APIs on the exact subsystem features they require is simpler and lower-risk than adding optional fields throughout the public struct
+
+## [2026-05-08] Task 11: Generic TouchCtrl + TouchPoint derives
+
+### Changes made
+- Made `TouchCtrl<I2C>` generic over `embedded_hal::i2c::I2c` with default type `embassy_stm32::i2c::I2c<'static, Blocking, Master>`
+- Stored I2C instance inside TouchCtrl (methods now take `&mut self` only, no separate `&mut i2c` param)
+- Added `Clone, Copy, PartialEq, Eq, Debug, Default` derives to `TouchPoint`
+- Added `impl core::fmt::Display for TouchPoint` printing `(x, y)`
+- Made `TouchError<E>` generic over the I2C error type
+- Updated `Board::new()` to create I2C and pass to `TouchCtrl::new(i2c)`
+- Updated all 5 example files (display_touch, display_touch_rgb565, hw_diag, test_display_interactive, nt35510_hwtest)
+
+### Design decisions
+- Used `embedded_hal::i2c::I2c` (blocking trait from embedded-hal 1.0) instead of `embedded_hal_async::i2c::I2c` because:
+  - Both blocking and async embassy I2C instances implement the blocking trait
+  - Methods stay blocking (no `.await` needed, minimal example changes)
+  - In generic code, `self.i2c.write_read(...)` unambiguously resolves to the blocking trait method
+  - Adding `embedded-hal-async` as a dependency was not necessary
+- Kept single type param `I2C` (not `I2C, E`) since `E` is always `I2C::Error` — no need for redundancy
+- Default type uses `Blocking` mode because all existing examples use `new_blocking()`
+- Used private `type DefaultI2c` alias for the default to keep the struct definition readable
+
+### Key insight: default type param + concrete I2C lifetime
+- embassy `Peripherals` gives `Peri<'static, T>` for all peripherals, so `I2c::new_blocking(p.I2C1, ...)` produces `I2c<'static, Blocking, Master>` matching the default
+- When constructing with `TouchCtrl::new(i2c)`, type inference kicks in from the argument — the default is only used for type annotations like struct fields
+
+### Verification
+- `cargo build --target thumbv7em-none-eabihf --features touch` exits 0
+- `cargo build --target thumbv7em-none-eabihf --examples` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --examples -- -D warnings` exits 0
+- Evidence saved to `.sisyphus/evidence/task-11-build.txt`
+
+### Lessons
+- In generic code, inherent methods on the concrete type are invisible — only trait methods are visible, so no ambiguity between blocking/async `write_read`
+- Blanket `impl<E> From<E> for TouchError<E>` is safe (no conflict with reflexive impl since `TouchError<E> != E`)
+- When making a struct generic and storing a resource, the constructor signature change is the biggest API surface impact — all call sites need updating

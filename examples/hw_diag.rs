@@ -816,14 +816,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe {
         tpass_fn("Touch Chip ID", || {
-            let mut i2c = i2c::I2c::new_blocking(
+            let i2c = i2c::I2c::new_blocking(
                 peri.I2C1.clone_unchecked(),
                 peri.PB8.clone_unchecked(),
                 peri.PB9.clone_unchecked(),
                 i2c::Config::default(),
             );
-            let touch = TouchCtrl::new();
-            match touch.read_vendor_id(&mut i2c) {
+            let mut touch = TouchCtrl::new(i2c);
+            match touch.read_vendor_id() {
                 Ok(id) => id == 0x11,
                 Err(_) => false,
             }
@@ -832,14 +832,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe {
         tpass_fn("Touch Chip Model", || {
-            let mut i2c = i2c::I2c::new_blocking(
+            let i2c = i2c::I2c::new_blocking(
                 peri.I2C1.clone_unchecked(),
                 peri.PB8.clone_unchecked(),
                 peri.PB9.clone_unchecked(),
                 i2c::Config::default(),
             );
-            let touch = TouchCtrl::new();
-            match touch.read_chip_model(&mut i2c) {
+            let mut touch = TouchCtrl::new(i2c);
+            match touch.read_chip_model() {
                 Ok(model) => matches!(model, 0x06 | 0x36 | 0x64),
                 Err(_) => false,
             }
@@ -848,14 +848,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     unsafe {
         tpass_fn("Touch Idle Status", || {
-            let mut i2c = i2c::I2c::new_blocking(
+            let i2c = i2c::I2c::new_blocking(
                 peri.I2C1.clone_unchecked(),
                 peri.PB8.clone_unchecked(),
                 peri.PB9.clone_unchecked(),
                 i2c::Config::default(),
             );
-            let touch = TouchCtrl::new();
-            touch.td_status(&mut i2c).unwrap_or(0) == 0
+            let mut touch = TouchCtrl::new(i2c);
+            touch.td_status().unwrap_or(0) == 0
         })
     };
 
@@ -1098,18 +1098,18 @@ async fn main(_spawner: embassy_executor::Spawner) {
         );
         draw_text(&mut fb, "Tests phantom touch rejection.", 8, 52, &ts);
 
-        let touch = TouchCtrl::new();
-        let mut i2c = i2c::I2c::new_blocking(
+        let i2c = i2c::I2c::new_blocking(
             unsafe { peri.I2C1.clone_unchecked() },
             unsafe { peri.PB8.clone_unchecked() },
             unsafe { peri.PB9.clone_unchecked() },
             i2c::Config::default(),
         );
+        let mut touch = TouchCtrl::new(i2c);
         let mut deadline = 30u32;
         let mut touch_count = 0u32;
         while deadline > 0 {
-            if touch.td_status(&mut i2c).unwrap_or(0) > 0 {
-                if let Ok(point) = touch.get_touch(&mut i2c) {
+            if touch.td_status().unwrap_or(0) > 0 {
+                if let Ok(point) = touch.get_touch() {
                     if point.x >= 3 && point.x <= 476 && point.y >= 3 && point.y <= 796 {
                         let cross = Rgb888::new(0xff, 0xff, 0x00);
                         let cs = PrimitiveStyle::with_fill(cross);

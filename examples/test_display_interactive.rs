@@ -127,8 +127,8 @@ async fn main(spawner: Spawner) {
         BoardHint::ForceNt35510,
     );
     let mut fb = display.fb();
-    let mut i2c = i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
-    let touch = TouchCtrl::new();
+    let i2c = i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
+    let mut touch = TouchCtrl::new(i2c);
     let mut led = Output::new(p.PG6, Level::Low, Speed::Low);
 
     usb_phy_reset();
@@ -202,7 +202,7 @@ async fn main(spawner: Spawner) {
 
         draw_yes_no(&mut fb);
 
-        let answer = wait_for_yes_no(&touch, &mut i2c).await;
+        let answer = wait_for_yes_no(&mut touch).await;
 
         results.push((String::from(*name), answer));
         log.push(alloc::format!(
@@ -326,7 +326,7 @@ async fn main(spawner: Spawner) {
         embassy_futures::select::select3(
             async {
                 loop {
-                    if let Some((tx, ty)) = read_touch(&touch, &mut i2c, &mut last).await {
+                    if let Some((tx, ty)) = read_touch(&mut touch, &mut last).await {
                         let dist = isqrt((tx - cx) * (tx - cx) + (ty - cy) * (ty - cy));
                         tapped = dist < sz + 30;
                         log.push(alloc::format!(
@@ -454,7 +454,7 @@ async fn main(spawner: Spawner) {
                 }
             }
 
-            if let Some((tx, ty)) = read_touch(&touch, &mut i2c, &mut last).await {
+            if let Some((tx, ty)) = read_touch(&mut touch, &mut last).await {
                 taps.push((tx, ty));
                 log.push(alloc::format!(
                     "  {} tap {}/{}: ({},{})\n",
@@ -548,7 +548,7 @@ async fn main(spawner: Spawner) {
         let mut no_touch_count = 0;
 
         loop {
-            match read_touch_raw(&touch, &mut i2c) {
+            match read_touch_raw(&mut touch) {
                 Some((tx, ty))
                     if tx >= MARGIN as i32 && tx <= 476 && ty >= MARGIN as i32 && ty <= 796 =>
                 {
@@ -655,7 +655,7 @@ async fn main(spawner: Spawner) {
 
         let mut last: Option<(i32, i32)> = None;
         loop {
-            if let Some((tx, ty)) = read_touch(&touch, &mut i2c, &mut last).await {
+            if let Some((tx, ty)) = read_touch(&mut touch, &mut last).await {
                 let dist = isqrt((tx - dx) * (tx - dx) + (ty - dy) * (ty - dy));
                 dot_results.push((dx, dy, tx, ty, dist));
                 log.push(alloc::format!(
@@ -934,11 +934,10 @@ fn draw_yes_no(fb: &mut embassy_stm32f469i_disco::FramebufferView<'_>) {
 }
 
 async fn wait_for_yes_no(
-    touch: &TouchCtrl,
-    i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
+    touch: &mut TouchCtrl,
 ) -> bool {
     loop {
-        if let Some((tx, ty)) = read_touch_raw(touch, i2c) {
+        if let Some((tx, ty)) = read_touch_raw(touch) {
             let p = Point::new(tx, ty);
             if YES_RECT.contains(p) {
                 return true;
@@ -954,11 +953,10 @@ async fn wait_for_yes_no(
 // ── Touch helpers ──
 
 fn read_touch_raw(
-    touch: &TouchCtrl,
-    i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
+    touch: &mut TouchCtrl,
 ) -> Option<(i32, i32)> {
-    match touch.td_status(i2c) {
-        Ok(s) if s > 0 => match touch.get_touch(i2c) {
+    match touch.td_status() {
+        Ok(s) if s > 0 => match touch.get_touch() {
             Ok(p) => Some((p.x as i32, p.y as i32)),
             _ => None,
         },
@@ -967,11 +965,10 @@ fn read_touch_raw(
 }
 
 async fn read_touch(
-    touch: &TouchCtrl,
-    i2c: &mut i2c::I2c<'_, embassy_stm32::mode::Blocking, i2c::Master>,
+    touch: &mut TouchCtrl,
     last: &mut Option<(i32, i32)>,
 ) -> Option<(i32, i32)> {
-    let (tx, ty) = read_touch_raw(touch, i2c)?;
+    let (tx, ty) = read_touch_raw(touch)?;
     if tx < MARGIN as i32 || tx > 476 || ty < MARGIN as i32 || ty > 796 {
         return None;
     }
