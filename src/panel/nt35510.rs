@@ -48,6 +48,13 @@ pub enum BoardHint {
     ForceOtm8009a,
 }
 
+/// Detect the LCD panel controller via DSI command-mode reads.
+///
+/// When [`BoardHint::Auto`] is given, attempts up to 3 NT35510 probes via DSI.
+/// Falls back to [`LcdController::Nt35510`] if all probes fail (DSI reads are
+/// unreliable on this board — see Known Issues in AGENTS.md).
+/// Forced hints ([`BoardHint::ForceNt35510`], [`BoardHint::ForceOtm8009a`])
+/// skip the probe entirely.
 pub fn detect_panel(dsi: &mut impl DsiHostCtrlIo, hint: BoardHint) -> LcdController {
     if hint == BoardHint::ForceNt35510 {
         return LcdController::Nt35510;

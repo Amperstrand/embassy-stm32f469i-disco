@@ -58,6 +58,15 @@ impl Board {
     /// Initialize SDRAM, display, touch controller, LEDs, and user button.
     ///
     /// Consumes I2C1 (PB8/PB9) for the touch controller.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the HCLK frequency cannot be determined (should never happen
+    /// after a valid [`config_180()`](crate::config_180) /
+    /// [`config_168()`](crate::config_168) call) or if display initialization
+    /// fails. For a fallible constructor, use the lower-level
+    /// [`SdramCtrl`], [`DisplayCtrl::try_new`], and [`TouchCtrl::new`]
+    /// individually.
     #[must_use]
     pub fn new(mut p: Peripherals, hint: BoardHint) -> Self {
         let source_clock_hz = rcc::clocks(&p.RCC)
