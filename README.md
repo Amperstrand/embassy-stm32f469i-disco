@@ -70,6 +70,18 @@ See [docs/CLOCK-Configurations.md](docs/CLOCK-Configurations.md) for the full cl
 
 ## Examples
 
+Idiomatic examples live in `examples/board_*.rs` — these use the BSP's safe APIs and are the recommended starting points.
+
+Historical bring-up and debugging examples (raw register access, `unsafe` code) are in `examples/bringup/` behind the `bringup` feature flag:
+
+```bash
+# Build all idiomatic examples (default)
+cargo build --target thumbv7em-none-eabihf --examples
+
+# Build all examples including bring-up
+cargo build --target thumbv7em-none-eabihf --examples --features bringup
+```
+
 ### Blink an LED
 
 ```rust

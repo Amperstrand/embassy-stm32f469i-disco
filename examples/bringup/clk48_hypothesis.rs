@@ -98,7 +98,10 @@ unsafe fn dump_clk48_regs() {
 
     // Read offset 0x94 directly — may be undefined on F469
     let dckcfgr2_val = stm32_metapac::RCC.dckcfgr2().read().0;
-    defmt::info!("  DCKCFGR2 = {:#010X} (may be undefined on F469)", dckcfgr2_val);
+    defmt::info!(
+        "  DCKCFGR2 = {:#010X} (may be undefined on F469)",
+        dckcfgr2_val
+    );
     defmt::info!("  CK48MSEL bit27 = {}", (dckcfgr2_val >> 27) & 1);
 }
 
@@ -114,14 +117,14 @@ async fn main(_spawner: embassy_executor::Spawner) {
     config.rcc.pll = Some(Pll {
         prediv: PllPreDiv::DIV8,
         mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),   // 180 MHz sysclk
-        divq: Some(PllQDiv::DIV7),   // 51.4 MHz (unused for USB)
+        divp: Some(PllPDiv::DIV2), // 180 MHz sysclk
+        divq: Some(PllQDiv::DIV7), // 51.4 MHz (unused for USB)
         divr: Some(PllRDiv::DIV6),
     });
 
     // ── PLLSAI config depends on CONDITION ───────────────────────────
     let divp_setting = match CONDITION {
-        'A' | 'D' => None,           // PLLSAI_P = 384/2 = 192 MHz (default)
+        'A' | 'D' => None,                // PLLSAI_P = 384/2 = 192 MHz (default)
         'B' | 'C' => Some(PllPDiv::DIV8), // PLLSAI_P = 384/8 = 48 MHz
         _ => None,
     };
@@ -130,8 +133,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
         prediv: PllPreDiv::DIV8,
         mul: PllMul::MUL384,
         divp: divp_setting,
-        divq: Some(PllQDiv::DIV8),   // 48 MHz (embassy freq table)
-        divr: Some(PllRDiv::DIV7),   // 54.86 MHz (LTDC pixel clock)
+        divq: Some(PllQDiv::DIV8), // 48 MHz (embassy freq table)
+        divr: Some(PllRDiv::DIV7), // 54.86 MHz (LTDC pixel clock)
     });
 
     config.rcc.ahb_pre = AHBPrescaler::DIV1;
@@ -156,17 +159,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
     defmt::info!("╔══════════════════════════════════════════╗");
     defmt::info!("║  CK48MSEL Hypothesis Test — Condition {}  ║", CONDITION);
     defmt::info!("╚══════════════════════════════════════════╝");
-    defmt::info!("  PLLSAI divp = {}", match divp_setting {
-        Some(PllPDiv::DIV8) => "DIV8 (48 MHz)",
-        Some(_) => "other",
-        None => "None (192 MHz default)",
-    });
+    defmt::info!(
+        "  PLLSAI divp = {}",
+        match divp_setting {
+            Some(PllPDiv::DIV8) => "DIV8 (48 MHz)",
+            Some(_) => "other",
+            None => "None (192 MHz default)",
+        }
+    );
     defmt::info!("  DCKCFGR2 write = {}", dckcfgr2_write);
     defmt::info!("  Embassy clk48sel → DCKCFGR (upstream default)");
 
     // ── Dump register state ───────────────────────────────────────────
     defmt::info!("Register state after init:");
-    unsafe { dump_clk48_regs(); }
+    unsafe {
+        dump_clk48_regs();
+    }
 
     // ── Test 1: RNG init (48MHz clock proxy) ─────────────────────────
     defmt::info!("TEST rng_init_48mhz: RUNNING");
@@ -174,7 +182,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
     if rng_ok {
         pass("rng_init_48mhz");
     } else {
-        fail("rng_init_48mhz", "RNG not ready — no 48MHz clock reaching RNG");
+        fail(
+            "rng_init_48mhz",
+            "RNG not ready — no 48MHz clock reaching RNG",
+        );
     }
 
     // ── Test 2: RNG not-zeros (if init passed) ────────────────────────
@@ -238,7 +249,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 pass("dckcfgr2_readback");
                 defmt::info!("  DCKCFGR2 write stuck (register exists at 0x94)");
             } else {
-                fail("dckcfgr2_readback", "write did not stick — register may not exist");
+                fail(
+                    "dckcfgr2_readback",
+                    "write did not stick — register may not exist",
+                );
             }
         } else {
             // We didn't write — just report what we see
@@ -252,7 +266,12 @@ async fn main(_spawner: embassy_executor::Spawner) {
     let failed = FAILED.load(Ordering::Relaxed);
     let total = passed + failed;
     defmt::info!("══════════════════════════════════════════");
-    defmt::info!("Condition {} SUMMARY: {}/{} passed", CONDITION, passed, total);
+    defmt::info!(
+        "Condition {} SUMMARY: {}/{} passed",
+        CONDITION,
+        passed,
+        total
+    );
 
     // ── Verdict ───────────────────────────────────────────────────────
     let rng_passed = rng_ok;
@@ -273,7 +292,9 @@ async fn main(_spawner: embassy_executor::Spawner) {
         }
         'C' => {
             if rng_passed {
-                defmt::info!("VERDICT C: CONFIRMED — divp:DIV8 + DCKCFGR2 write → RNG passes (same as B)");
+                defmt::info!(
+                    "VERDICT C: CONFIRMED — divp:DIV8 + DCKCFGR2 write → RNG passes (same as B)"
+                );
             } else {
                 defmt::error!("VERDICT C: UNEXPECTED — RNG failed with divp:DIV8 + DCKCFGR2!");
             }

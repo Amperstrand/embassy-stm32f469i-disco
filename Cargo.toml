@@ -17,6 +17,7 @@ default = ["display", "touch"]
 display = ["dep:stm32-fmc", "dep:nt35510", "dep:embedded-display-controller", "dep:embedded-graphics", "dep:otm8009a", "dep:embedded-hal-02"]
 touch = []
 defmt = ["dep:defmt"]
+bringup = []
 
 [dependencies]
 embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
@@ -51,4 +52,29 @@ panic-halt = "1.0"
 heapless = "0.8"
 linked_list_allocator = "0.10"
 static_cell = "2"
+
+[[example]]
+name = "raw_dsi_bringup"
+path = "examples/bringup/raw_dsi_bringup.rs"
+required-features = ["bringup"]
+
+[[example]]
+name = "raw_display_minimal"
+path = "examples/bringup/raw_display_minimal.rs"
+required-features = ["bringup"]
+
+[[example]]
+name = "clk48_hypothesis"
+path = "examples/bringup/clk48_hypothesis.rs"
+required-features = ["bringup"]
+
+[[example]]
+name = "nt35510_register_probe"
+path = "examples/bringup/nt35510_register_probe.rs"
+required-features = ["bringup"]
+
+[[example]]
+name = "sdram_raw"
+path = "examples/bringup/sdram_raw.rs"
+required-features = ["bringup"]
 
