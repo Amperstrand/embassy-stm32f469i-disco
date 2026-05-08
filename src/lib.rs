@@ -17,6 +17,7 @@
 //! Use [`config_180`], [`config_168`], or [`config_usb_only`] instead of manually
 //! configuring PLL/PLLSAI. See [`clock`] module for details.
 
+#![warn(missing_docs)]
 #![no_std]
 
 pub mod clock;

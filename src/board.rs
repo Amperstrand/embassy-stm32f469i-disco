@@ -10,9 +10,13 @@ use crate::{BoardHint, DisplayCtrl, SdramCtrl, TouchCtrl};
 ///
 /// LEDs are active-low: drive low to turn on, high to turn off.
 pub struct Leds {
+    /// Green LED on PG6.
     pub green: Output<'static>,
+    /// Orange LED on PD4.
     pub orange: Output<'static>,
+    /// Red LED on PD5.
     pub red: Output<'static>,
+    /// Blue LED on PK3.
     pub blue: Output<'static>,
 }
 
@@ -38,10 +42,15 @@ pub struct SdramRemainders {
 /// let _ = board;
 /// ```
 pub struct Board {
+    /// DSI/LTDC display controller.
     pub display: DisplayCtrl<'static>,
+    /// FT6X06 touch controller.
     pub touch: TouchCtrl,
+    /// User LEDs.
     pub leds: Leds,
+    /// User button on PA0.
     pub user_button: UserButton,
+    /// Pins left free after SDRAM/display bring-up.
     pub sdram_remainders: SdramRemainders,
 }
 

@@ -35,28 +35,43 @@ pub use nt35510::PANEL_HEIGHT as FB_HEIGHT;
 /// Panel width in pixels (portrait). Re-exported from nt35510.
 pub use nt35510::PANEL_WIDTH as FB_WIDTH;
 
+/// Total framebuffer pixel count (480 × 800 = 384,000).
 pub const FB_SIZE: usize = FB_WIDTH as usize * FB_HEIGHT as usize;
 
+/// Pixel format trait for display controller configuration.
+///
+/// Implementors define how colors are encoded for LTDC, DSI, and the panel IC.
+/// Two built-in formats are provided: [`Argb8888`] (4 bytes/pixel) and [`Rgb565`] (2 bytes/pixel).
 pub trait DisplayFormat: Copy + 'static {
+    /// Raw pixel type stored in the framebuffer.
     type Pixel: Copy + PartialEq;
 
+    /// Color type from `embedded-graphics`.
     type Color: RgbColor;
 
+    /// LTDC pixel format register value (0=ARGB8888, 2=RGB565, etc.).
     fn ltdc_pf() -> u8;
 
+    /// DSI color coding byte.
     fn dsi_color_coding() -> u8;
 
+    /// NT35510 color format enum variant.
     fn nt35510_color_format() -> nt35510::ColorFormat;
 
+    /// Bytes per pixel.
     fn bpp() -> usize;
 
+    /// Convert an `embedded-graphics` color to a raw pixel value.
     fn encode(color: Self::Color) -> Self::Pixel;
 
+    /// Raw pixel value representing black.
     fn black() -> Self::Pixel;
 
+    /// Default `embedded-graphics` color (typically black).
     fn default_color() -> Self::Color;
 }
 
+/// ARGB8888 pixel format (4 bytes/pixel, 32-bit).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Argb8888;
@@ -94,6 +109,7 @@ impl DisplayFormat for Argb8888 {
     }
 }
 
+/// RGB565 pixel format (2 bytes/pixel, 16-bit).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct Rgb565;
@@ -143,14 +159,18 @@ pub enum DisplayInitError {
     PanelInit,
 }
 
+/// Display orientation (portrait or landscape).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DisplayOrientation {
+    /// Portrait mode: 480 wide × 800 tall.
     Portrait,
+    /// Landscape mode: 800 wide × 480 tall.
     Landscape,
 }
 
 impl DisplayOrientation {
+    /// Pixel width for this orientation.
     pub const fn width(self) -> u16 {
         match self {
             DisplayOrientation::Portrait => FB_WIDTH,
@@ -158,6 +178,7 @@ impl DisplayOrientation {
         }
     }
 
+    /// Pixel height for this orientation.
     pub const fn height(self) -> u16 {
         match self {
             DisplayOrientation::Portrait => FB_HEIGHT,
@@ -165,10 +186,12 @@ impl DisplayOrientation {
         }
     }
 
+    /// Total framebuffer pixel count for this orientation.
     pub const fn fb_size(self) -> usize {
         (self.width() as usize) * (self.height() as usize)
     }
 
+    /// NT35510 panel mode corresponding to this orientation.
     pub const fn nt35510_mode(self) -> nt35510::Mode {
         match self {
             DisplayOrientation::Portrait => nt35510::Mode::Portrait,
@@ -179,6 +202,11 @@ impl DisplayOrientation {
 
 // ── Display init (orchestrator) ────────────────────────────────────────
 
+/// DSI/LTDC display controller with embedded-graphics support.
+///
+/// Owns the framebuffer, LTDC peripheral, and DSI host. Use [`fb()`](Self::fb)
+/// to obtain a [`FramebufferView`] for drawing. The default pixel format is
+/// [`Argb8888`]; use `DisplayCtrl<'d, Rgb565>` for 16-bit color.
 pub struct DisplayCtrl<'d, F: DisplayFormat = Argb8888> {
     framebuffer: &'static mut [F::Pixel],
     _ltdc: Ltdc<'d, peripherals::LTDC>,
@@ -261,6 +289,9 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
         })
     }
 
+    /// Obtain a [`FramebufferView`] for drawing via `embedded-graphics`.
+    ///
+    /// The returned view borrows `self` mutably, so only one view can exist at a time.
     #[must_use]
     pub fn fb(&mut self) -> FramebufferView<'_, F> {
         FramebufferView::new(
@@ -269,9 +300,11 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
             self.orientation.height() as usize,
         )
     }
+    /// Access the underlying DSI host peripheral.
     pub fn dsi(&mut self) -> &mut dsihost::DsiHost<'d, peripherals::DSIHOST> {
         &mut self.dsi
     }
+    /// Returns the current display orientation.
     pub fn orientation(&self) -> DisplayOrientation {
         self.orientation
     }
@@ -322,6 +355,9 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
 }
 
 impl<'d> DisplayCtrl<'d> {
+    /// Create a display controller in portrait orientation with ARGB8888 format.
+    ///
+    /// Panics on initialization failure. Use [`try_new()`](Self::try_new) for fallible init.
     pub fn new(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -334,6 +370,9 @@ impl<'d> DisplayCtrl<'d> {
             .expect("display init failed")
     }
 
+    /// Try to create a display controller in portrait orientation with ARGB8888 format.
+    ///
+    /// Returns `Err(DisplayInitError)` if DSI init times out or panel init fails.
     pub fn try_new(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -353,6 +392,9 @@ impl<'d> DisplayCtrl<'d> {
         )
     }
 
+    /// Create a display controller with ARGB8888 format and the specified orientation.
+    ///
+    /// Panics on initialization failure. Use [`try_new_with_orientation()`](Self::try_new_with_orientation) for fallible init.
     pub fn new_with_orientation(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -374,6 +416,7 @@ impl<'d> DisplayCtrl<'d> {
         .expect("display init failed")
     }
 
+    /// Try to create a display controller with ARGB8888 format and the specified orientation.
     pub fn try_new_with_orientation(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -395,7 +438,11 @@ impl<'d> DisplayCtrl<'d> {
     }
 }
 
+/// Constructor trait for [`DisplayCtrl`] with a specific pixel format.
+///
+/// Allows abstracting over [`Argb8888`] and [`Rgb565`] formats when calling constructors.
 pub trait DisplayCtrlCtor<'d>: Sized {
+    /// Create a display controller in portrait orientation. Panics on failure.
     fn new(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -405,6 +452,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
         hint: BoardHint,
     ) -> Self;
 
+    /// Try to create a display controller in portrait orientation.
     fn try_new(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -414,6 +462,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
         hint: BoardHint,
     ) -> Result<Self, DisplayInitError>;
 
+    /// Create a display controller with the specified orientation. Panics on failure.
     fn new_with_orientation(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,
@@ -424,6 +473,7 @@ pub trait DisplayCtrlCtor<'d>: Sized {
         orientation: DisplayOrientation,
     ) -> Self;
 
+    /// Try to create a display controller with the specified orientation.
     fn try_new_with_orientation(
         framebuffer: &'static mut [u8],
         ltdc: Peri<'d, peripherals::LTDC>,

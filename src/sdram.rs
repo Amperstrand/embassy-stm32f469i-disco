@@ -21,7 +21,10 @@ struct EmbassyFmc {
     source_clock: u32,
 }
 
+// SAFETY: EmbassyFmc is only used from SdramCtrl::new() which takes &mut Peripherals,
+// ensuring exclusive access. The FMC register block is a single hardware resource.
 unsafe impl Send for EmbassyFmc {}
+// SAFETY: REGISTERS points to the FMC peripheral at 0xA000_0000, fixed by STM32F469 silicon.
 unsafe impl FmcPeripheral for EmbassyFmc {
     const REGISTERS: *const () = 0xa000_0000 as *const ();
 
@@ -125,6 +128,8 @@ impl SdramCtrl {
 
     fn into_slice<T>(self) -> &'static mut [T] {
         let len = SDRAM_SIZE_BYTES / core::mem::size_of::<T>();
+        // SAFETY: self.mem points to the full 16MB SDRAM region. The slice length
+        // is computed from SDRAM_SIZE_BYTES which matches the hardware size.
         unsafe { &mut *core::ptr::slice_from_raw_parts_mut(self.mem.cast::<T>(), len) }
     }
 
@@ -159,6 +164,8 @@ impl SdramCtrl {
     /// Run a quick destructive SDRAM smoke test over the first 4 KiB.
     #[must_use]
     pub fn test_quick(&self) -> bool {
+        // SAFETY: self.mem points to the SDRAM base address returned by stm32-fmc init.
+        // 1024 u32 words = 4 KiB, well within the 16MB SDRAM region.
         let words = unsafe { core::slice::from_raw_parts_mut(self.mem, 1024) };
         for word in words.iter_mut() {
             *word = 0xDEAD_BEEF;

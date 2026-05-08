@@ -35,7 +35,9 @@ use embassy_stm32::rcc::*;
 use embassy_stm32::time::Hertz;
 use embassy_stm32::Config;
 
+/// System clock frequency for [`config_180`]: 180 MHz.
 pub const SYSCLK_HZ_180: u32 = 180_000_000;
+/// System clock frequency for [`config_168`]: 168 MHz.
 pub const SYSCLK_HZ_168: u32 = 168_000_000;
 
 /// 180 MHz sysclk + 48 MHz USB/RNG via PLLSAI_Q + 54.86 MHz LTDC via PLLSAI_R.

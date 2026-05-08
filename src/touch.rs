@@ -157,7 +157,7 @@ impl<I2C: I2c> TouchCtrl<I2C> {
 
     /// Enable edge filtering for phantom touch rejection.
     ///
-    /// Touch points outside the specified bounds will return `Ok(None)` from [`get_touch()`].
+    /// Touch points outside the specified bounds will return `Ok(None)` from [`get_touch`](TouchCtrl::get_touch).
     ///
     /// # Examples
     ///

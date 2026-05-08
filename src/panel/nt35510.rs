@@ -28,16 +28,23 @@ impl embedded_hal_02::blocking::delay::DelayMs<u32> for DelayMsAdapter {
     }
 }
 
+/// Supported LCD panel controllers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LcdController {
+    /// NT35510 panel (default on STM32F469I-Discovery).
     Nt35510,
+    /// OTM8009A panel (alternate).
     Otm8009a,
 }
 
+/// Hint for panel auto-detection during [`DisplayCtrl::new()`](crate::DisplayCtrl::new).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoardHint {
+    /// Probe the panel via DSI reads and fall back to NT35510 on failure.
     Auto,
+    /// Skip probe, assume NT35510. Recommended when DSI reads are unreliable.
     ForceNt35510,
+    /// Skip probe, assume OTM8009A.
     ForceOtm8009a,
 }
 

@@ -15,9 +15,15 @@ pub(crate) fn framebuffer_from_bytes<F: DisplayFormat>(
         0
     );
 
+    // SAFETY: bytes comes from SDRAM (aligned, non-null, exclusive access).
+    // Alignment and length are asserted above.
     unsafe { &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels) }
 }
 
+/// View over a pixel buffer implementing [`embedded_graphics::draw_target::DrawTarget`].
+///
+/// Created by [`DisplayCtrl::fb()`](crate::DisplayCtrl::fb). Supports
+/// [`Argb8888`](crate::Argb8888) and [`Rgb565`](crate::Rgb565) pixel formats.
 pub struct FramebufferView<'a, F: DisplayFormat = Argb8888> {
     buffer: &'a mut [F::Pixel],
     width: usize,
@@ -33,6 +39,7 @@ impl<'a, F: DisplayFormat> FramebufferView<'a, F> {
         }
     }
 
+    /// Fill the entire framebuffer with a single color.
     pub fn clear(&mut self, color: F::Color) {
         let raw = F::encode(color);
         for pixel in self.buffer.iter_mut() {
