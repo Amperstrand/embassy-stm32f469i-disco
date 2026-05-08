@@ -159,6 +159,8 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `4278bbd` | `main` | All examples migrated to clock presets, DsiHostCtrlIo casing fix |
+| `57c20e3` | `main` | docs: known-good pins, clock config adoption status. **Current HEAD** |
 | `07e09cd` | `main` | hw_diag RNG/Timer/DMA fixes (pending HW verification, issue #29) |
 | `f856b6e` | `main` | USB PHY reset, clock docs corrected. **Used by micronuts + microfips** |
 | `d28c859` | `main` | docs: correct 48MHz clock mechanism (PLLSAI_Q not PLLSAI_P) |
