@@ -159,3 +159,20 @@
 - Pure structural extraction works cleanly when shared display timing constants stay crate-visible in `display.rs` and the DSI module depends on them, avoiding duplicated register values
 - Keeping `DsiHostAdapter` internal preserves the external BSP API while still isolating all raw DSI host access in one module
 - A combined build/clippy evidence file is sufficient for structural refactors when both required commands are captured verbatim in the same artifact
+
+## [2026-05-08] Task 8: Extract LTDC + FramebufferView modules
+
+### Changes made
+- Moved LTDC timing constants plus controller/layer setup helpers from `src/display.rs` into new internal `src/ltdc.rs`
+- Moved `FramebufferView` and typed framebuffer slice conversion into new internal `src/framebuffer.rs`
+- Kept shared pixel-format types (`DisplayFormat`, `Argb8888`, `Rgb565`) in `src/display.rs` because both display init and framebuffer drawing depend on them
+- Updated `src/dsi.rs` to import LTDC timing constants from `crate::ltdc` and updated crate exports so `FramebufferView` is re-exported from the crate root
+
+### Verification
+- `cargo build --target thumbv7em-none-eabihf --examples` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings` exits 0
+- Combined evidence saved to `.sisyphus/evidence/task-8-build.txt`
+
+### Lessons
+- For pure structural splits, keeping cross-cutting traits in the original orchestration module can avoid circular ownership questions while still shrinking the file
+- A small `FramebufferView::new` constructor lets `DisplayCtrl::fb()` keep the same outward behavior while moving framebuffer internals into a separate module

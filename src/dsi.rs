@@ -9,9 +9,9 @@ use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCo
 use stm32_metapac::dsihost::regs::{Ier0, Ier1};
 use stm32_metapac::DSIHOST;
 
-use crate::display::{
-    DisplayInitError, DisplayOrientation, FB_HEIGHT, FB_WIDTH, H_BACK_PORCH,
-    H_BACK_PORCH_LANDSCAPE, H_FRONT_PORCH, H_FRONT_PORCH_LANDSCAPE, H_SYNC,
+use crate::display::{DisplayInitError, DisplayOrientation, FB_HEIGHT, FB_WIDTH};
+use crate::ltdc::{
+    H_BACK_PORCH, H_BACK_PORCH_LANDSCAPE, H_FRONT_PORCH, H_FRONT_PORCH_LANDSCAPE, H_SYNC,
     H_SYNC_LANDSCAPE, V_BACK_PORCH, V_BACK_PORCH_LANDSCAPE, V_FRONT_PORCH,
     V_FRONT_PORCH_LANDSCAPE, V_SYNC, V_SYNC_LANDSCAPE,
 };

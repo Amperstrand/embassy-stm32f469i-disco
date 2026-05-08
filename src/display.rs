@@ -6,18 +6,20 @@ use embassy_stm32::{dsihost, peripherals, Peri};
 use embassy_time::{block_for, Duration};
 use embedded_display_controller::dsi::DsiHostCtrlIo;
 use embedded_graphics::{
-    draw_target::DrawTarget,
     pixelcolor::{Rgb565 as EgRgb565, Rgb888, RgbColor},
-    prelude::*,
-    primitives::Rectangle,
+    prelude::IntoStorage,
 };
 use embedded_hal::delay::DelayNs;
 use nt35510::Nt35510;
 #[cfg(feature = "display")]
 use otm8009a::Otm8009A;
+#[cfg(feature = "defmt")]
 use stm32_metapac::LTDC;
 
 use crate::dsi::{configure_dsi_host, DsiHostAdapter};
+use crate::framebuffer::framebuffer_from_bytes;
+use crate::framebuffer::FramebufferView;
+use crate::ltdc::{configure_ltdc, configure_ltdc_layer};
 pub use crate::sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 
 #[cfg(feature = "defmt")]
@@ -187,160 +189,6 @@ impl DisplayOrientation {
             DisplayOrientation::Landscape => nt35510::Mode::Landscape,
         }
     }
-}
-
-// NOTE: These timing values differ from nt35510::PanelTiming::STANDARD_PORTRAIT
-// (V_SYNC=1, V_BACK_PORCH=15, V_FRONT_PORCH=16). The embassy BSP uses a
-// manual PLLSAI configuration producing ~54MHz pixel clock, which requires
-// larger vertical blanking intervals. These values are NOT interchangeable
-// with the standard timing — switching would break DSI/LTDC synchronization.
-pub(crate) const H_SYNC: u16 = 2;
-pub(crate) const H_BACK_PORCH: u16 = 34;
-pub(crate) const H_FRONT_PORCH: u16 = 34;
-pub(crate) const V_SYNC: u16 = 120;
-pub(crate) const V_BACK_PORCH: u16 = 150;
-pub(crate) const V_FRONT_PORCH: u16 = 150;
-
-pub(crate) const H_SYNC_LANDSCAPE: u16 = 120;
-pub(crate) const H_BACK_PORCH_LANDSCAPE: u16 = 150;
-pub(crate) const H_FRONT_PORCH_LANDSCAPE: u16 = 150;
-pub(crate) const V_SYNC_LANDSCAPE: u16 = 2;
-pub(crate) const V_BACK_PORCH_LANDSCAPE: u16 = 34;
-pub(crate) const V_FRONT_PORCH_LANDSCAPE: u16 = 34;
-
-fn configure_ltdc(ltdc: &mut Ltdc<'_, peripherals::LTDC>, orientation: DisplayOrientation) {
-    use stm32_metapac::ltdc::vals::{Depol, Hspol, Pcpol, Vspol};
-
-    let (
-        h_sync,
-        h_back_porch,
-        h_front_porch,
-        v_sync,
-        v_back_porch,
-        v_front_porch,
-        fb_width,
-        fb_height,
-    ) = match orientation {
-        DisplayOrientation::Portrait => (
-            H_SYNC,
-            H_BACK_PORCH,
-            H_FRONT_PORCH,
-            V_SYNC,
-            V_BACK_PORCH,
-            V_FRONT_PORCH,
-            FB_WIDTH,
-            FB_HEIGHT,
-        ),
-        DisplayOrientation::Landscape => (
-            H_SYNC_LANDSCAPE,
-            H_BACK_PORCH_LANDSCAPE,
-            H_FRONT_PORCH_LANDSCAPE,
-            V_SYNC_LANDSCAPE,
-            V_BACK_PORCH_LANDSCAPE,
-            V_FRONT_PORCH_LANDSCAPE,
-            FB_HEIGHT,
-            FB_WIDTH,
-        ),
-    };
-
-    ltdc.disable();
-    LTDC.gcr().modify(|w| {
-        w.set_hspol(Hspol::ACTIVE_HIGH);
-        w.set_vspol(Vspol::ACTIVE_HIGH);
-        w.set_depol(Depol::ACTIVE_LOW);
-        w.set_pcpol(Pcpol::RISING_EDGE);
-    });
-    LTDC.sscr().modify(|w| {
-        w.set_hsw(h_sync - 1);
-        w.set_vsh(v_sync - 1);
-    });
-    LTDC.bpcr().modify(|w| {
-        w.set_ahbp(h_sync + h_back_porch - 1);
-        w.set_avbp(v_sync + v_back_porch - 1);
-    });
-    LTDC.awcr().modify(|w| {
-        w.set_aah(v_sync + v_back_porch + fb_height - 1);
-        w.set_aaw(fb_width + h_sync + h_back_porch - 1);
-    });
-    LTDC.twcr().modify(|w| {
-        w.set_totalh(v_sync + v_back_porch + fb_height + v_front_porch - 1);
-        w.set_totalw(fb_width + h_sync + h_back_porch + h_front_porch - 1);
-    });
-    LTDC.bccr().modify(|w| {
-        w.set_bcred(0);
-        w.set_bcgreen(0);
-        w.set_bcblue(0);
-    });
-    LTDC.ier().modify(|w| {
-        w.set_terrie(true);
-        w.set_fuie(true);
-    });
-    ltdc.enable();
-}
-
-fn configure_ltdc_layer<F: DisplayFormat>(
-    _ltdc: &mut Ltdc<'_, peripherals::LTDC>,
-    fb_addr: u32,
-    orientation: DisplayOrientation,
-) {
-    use stm32_metapac::ltdc::vals::{Bf1, Bf2, Imr, Pf};
-
-    let window_x1 = orientation.width();
-    let window_y1 = orientation.height();
-    const ALPHA: u8 = 255;
-    const ALPHA0: u8 = 0;
-    let pixel_format = match F::ltdc_pf() {
-        0 => Pf::ARGB8888,
-        1 => Pf::RGB888,
-        2 => Pf::RGB565,
-        3 => Pf::ARGB1555,
-        4 => Pf::ARGB4444,
-        _ => Pf::ARGB8888,
-    };
-    let pixel_size = F::bpp() as u16;
-
-    LTDC.layer(0).whpcr().write(|w| {
-        w.set_whstpos(LTDC.bpcr().read().ahbp() + 1);
-        w.set_whsppos(LTDC.bpcr().read().ahbp() + window_x1);
-    });
-    LTDC.layer(0).wvpcr().write(|w| {
-        w.set_wvstpos(LTDC.bpcr().read().avbp() + 1);
-        w.set_wvsppos(LTDC.bpcr().read().avbp() + window_y1);
-    });
-    LTDC.layer(0).pfcr().write(|w| w.set_pf(pixel_format));
-    LTDC.layer(0).dccr().modify(|w| {
-        w.set_dcblue(0);
-        w.set_dcgreen(0);
-        w.set_dcred(0);
-        w.set_dcalpha(ALPHA0);
-    });
-    LTDC.layer(0).cacr().write(|w| w.set_consta(ALPHA));
-    LTDC.layer(0).bfcr().write(|w| {
-        w.set_bf1(Bf1::CONSTANT);
-        w.set_bf2(Bf2::CONSTANT);
-    });
-    LTDC.layer(0).cfbar().write(|w| w.set_cfbadd(fb_addr));
-    LTDC.layer(0).cfblr().write(|w| {
-        w.set_cfbp(window_x1 * pixel_size);
-        w.set_cfbll((window_x1 * pixel_size) + 3);
-    });
-    LTDC.layer(0).cfblnr().write(|w| w.set_cfblnbr(window_y1));
-    LTDC.layer(0).cr().modify(|w| w.set_len(true));
-    LTDC.srcr().modify(|w| w.set_imr(Imr::RELOAD));
-}
-
-fn framebuffer_from_bytes<F: DisplayFormat>(
-    bytes: &'static mut [u8],
-    len_pixels: usize,
-) -> &'static mut [F::Pixel] {
-    let required_bytes = len_pixels * F::bpp();
-    assert!(bytes.len() >= required_bytes);
-    assert_eq!(
-        (bytes.as_mut_ptr() as usize) % core::mem::align_of::<F::Pixel>(),
-        0
-    );
-
-    unsafe { &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels) }
 }
 
 // ── Display panel detection ──────────────────────────────────────────
@@ -547,11 +395,11 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
 
     #[must_use]
     pub fn fb(&mut self) -> FramebufferView<'_, F> {
-        FramebufferView {
-            buffer: self.framebuffer,
-            width: self.orientation.width() as usize,
-            height: self.orientation.height() as usize,
-        }
+        FramebufferView::new(
+            self.framebuffer,
+            self.orientation.width() as usize,
+            self.orientation.height() as usize,
+        )
     }
     pub fn dsi(&mut self) -> &mut dsihost::DsiHost<'d, peripherals::DSIHOST> {
         &mut self.dsi
@@ -790,119 +638,5 @@ impl<'d> DisplayCtrlCtor<'d> for DisplayCtrl<'d, Rgb565> {
             hint,
             orientation,
         )
-    }
-}
-
-pub struct FramebufferView<'a, F: DisplayFormat = Argb8888> {
-    buffer: &'a mut [F::Pixel],
-    width: usize,
-    height: usize,
-}
-
-impl<F: DisplayFormat> FramebufferView<'_, F> {
-    pub fn clear(&mut self, color: F::Color) {
-        let raw = F::encode(color);
-        for pixel in self.buffer.iter_mut() {
-            *pixel = raw;
-        }
-    }
-
-    /// Fill framebuffer with 4 distinct colors (one per quarter) and verify readback.
-    ///
-    /// Display shows red/green/blue/yellow quarters for visual inspection.
-    /// Returns mismatched pixel count (0 = pass). Useful for validating
-    /// SDRAM framebuffer integrity and display alignment.
-    #[cfg(feature = "defmt")]
-    pub fn verify_quarter_fill(&mut self) -> usize
-    where
-        F::Color: embedded_graphics::pixelcolor::RgbColor,
-    {
-        let qh = self.height / 4;
-        let colors: [F::Pixel; 4] = [
-            F::encode(F::Color::RED),
-            F::encode(F::Color::GREEN),
-            F::encode(F::Color::BLUE),
-            F::encode(F::Color::YELLOW),
-        ];
-
-        for (q, &color) in colors.iter().enumerate() {
-            let start = q * qh * self.width;
-            let end = if q == 3 {
-                self.buffer.len()
-            } else {
-                (q + 1) * qh * self.width
-            };
-            for px in self.buffer[start..end].iter_mut() {
-                *px = color;
-            }
-        }
-
-        let mut mismatches = 0usize;
-        for (q, &color) in colors.iter().enumerate() {
-            let start = q * qh * self.width;
-            let end = if q == 3 {
-                self.buffer.len()
-            } else {
-                (q + 1) * qh * self.width
-            };
-            for &px in &self.buffer[start..end] {
-                if px != color {
-                    mismatches += 1;
-                }
-            }
-        }
-        mismatches
-    }
-}
-
-impl<F: DisplayFormat> DrawTarget for FramebufferView<'_, F> {
-    type Color = F::Color;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = embedded_graphics::Pixel<Self::Color>>,
-    {
-        for pixel in pixels {
-            let x = pixel.0.x as usize;
-            let y = pixel.0.y as usize;
-            if x < self.width && y < self.height {
-                self.buffer[y * self.width + x] = F::encode(pixel.1);
-            }
-        }
-        Ok(())
-    }
-
-    fn fill_contiguous<I>(&mut self, area: &Rectangle, color: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Self::Color>,
-    {
-        let mut colors = color.into_iter();
-        let area_width = area.size.width as i32;
-        let area_height = area.size.height as i32;
-
-        for dy in 0..area_height {
-            for dx in 0..area_width {
-                let raw = F::encode(colors.next().unwrap_or_else(F::default_color));
-                let x = area.top_left.x + dx;
-                let y = area.top_left.y + dy;
-
-                if x >= 0 && y >= 0 && (x as usize) < self.width && (y as usize) < self.height {
-                    self.buffer[y as usize * self.width + x as usize] = raw;
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
-        FramebufferView::clear(self, color);
-        Ok(())
-    }
-}
-
-impl<F: DisplayFormat> OriginDimensions for FramebufferView<'_, F> {
-    fn size(&self) -> Size {
-        Size::new(self.width as u32, self.height as u32)
     }
 }

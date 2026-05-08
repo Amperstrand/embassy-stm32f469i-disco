@@ -31,6 +31,12 @@ mod sdram;
 #[cfg(feature = "display")]
 mod dsi;
 
+#[cfg(feature = "display")]
+mod framebuffer;
+
+#[cfg(feature = "display")]
+mod ltdc;
+
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
 #[cfg(feature = "display")]
 pub mod display;
@@ -42,8 +48,11 @@ pub mod touch;
 #[cfg(feature = "display")]
 pub use display::{
     Argb8888, BoardHint, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError,
-    FramebufferView, LcdController, Rgb565, FB_HEIGHT, FB_WIDTH,
+    LcdController, Rgb565, FB_HEIGHT, FB_WIDTH,
 };
+
+#[cfg(feature = "display")]
+pub use framebuffer::FramebufferView;
 
 #[cfg(feature = "display")]
 pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
