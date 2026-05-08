@@ -74,6 +74,57 @@ const FRAMEBUFFER_BYTES: usize = FB_WIDTH as usize * FB_HEIGHT as usize * 4;
 const SDRAM_SCRATCH_OFFSET: usize = 2 * 1024 * 1024;
 const SDRAM_SCRATCH_BASE: usize = SDRAM_BASE + SDRAM_SCRATCH_OFFSET;
 
+// CCMRAM result buffer at 0x1000_0000 for probe-rs readback.
+// Read with: python3 tests/read_test_results.py
+
+const TEST_NAME_LEN: usize = 48;
+const RESULT_MAGIC: u32 = 0x5245534C; // "RESL"
+const CCMRAM_BASE: usize = 0x1000_0000;
+
+#[repr(C)]
+struct TestResultEntry {
+    name: [u8; TEST_NAME_LEN],
+    passed: u8,
+    _pad: [u8; 3],
+}
+
+#[repr(C)]
+struct TestResultBuffer {
+    magic: u32,
+    count: u32,
+    pass_count: u32,
+    fail_count: u32,
+    entries: [TestResultEntry; MAX_TESTS],
+    done: u32,
+}
+
+fn copy_name(dest: &mut [u8; TEST_NAME_LEN], src: &str) {
+    let bytes = src.as_bytes();
+    let len = bytes.len().min(TEST_NAME_LEN);
+    dest[..len].copy_from_slice(&bytes[..len]);
+    for b in dest.iter_mut().skip(len) {
+        *b = 0;
+    }
+}
+
+unsafe fn flush_to_ccmram() {
+    let buf = CCMRAM_BASE as *mut TestResultBuffer;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).magic), RESULT_MAGIC);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).count), RESULT_COUNT as u32);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).pass_count), PASS_COUNT as u32);
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).fail_count), FAIL_COUNT as u32);
+    for i in 0..RESULT_COUNT.min(MAX_TESTS) {
+        let entry = core::ptr::addr_of_mut!((*buf).entries[i]);
+        copy_name(&mut (*entry).name, RESULTS[i].0);
+        core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).passed), if RESULTS[i].1 { 1 } else { 0 });
+    }
+}
+
+unsafe fn mark_done() {
+    let buf = CCMRAM_BASE as *mut TestResultBuffer;
+    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).done), RESULT_MAGIC);
+}
+
 static mut RESULTS: [(&str, bool); MAX_TESTS] = [("", false); MAX_TESTS];
 static mut RESULT_COUNT: usize = 0;
 static mut PASS_COUNT: usize = 0;
@@ -86,6 +137,7 @@ unsafe fn tpass(name: &'static str) {
     }
     PASS_COUNT += 1;
     defmt::info!("TEST {}: PASS", name);
+    flush_to_ccmram();
 }
 
 unsafe fn tfail(name: &'static str, reason: &'static str) {
@@ -95,6 +147,7 @@ unsafe fn tfail(name: &'static str, reason: &'static str) {
     }
     FAIL_COUNT += 1;
     defmt::info!("TEST {}: FAIL {}", name, reason);
+    flush_to_ccmram();
 }
 
 unsafe fn trun(name: &'static str) {
@@ -1118,6 +1171,11 @@ async fn main(_spawner: Spawner) {
 
     defmt::info!("=== Extensive Hardware Test v0.1.0 ===");
 
+    unsafe {
+        let buf = CCMRAM_BASE as *mut TestResultBuffer;
+        core::ptr::write_bytes(buf as *mut u8, 0, core::mem::size_of::<TestResultBuffer>());
+    }
+
     phase1_raw_tests(&peri).await;
 
     let board = Board::new(p, BoardHint::ForceNt35510);
@@ -1140,6 +1198,9 @@ async fn main(_spawner: Spawner) {
     phase4_touch(&mut board).await;
     phase5_uart_dma(&mut board, &peri).await;
     phase6_summary(&mut board).await;
+
+    unsafe { mark_done(); }
+    defmt::info!("Results at CCMRAM 0x10000000. Run: python3 tests/read_test_results.py");
 
     loop {
         Timer::after(Duration::from_secs(1)).await;
