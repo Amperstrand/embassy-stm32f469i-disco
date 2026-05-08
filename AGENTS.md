@@ -304,6 +304,36 @@ probe-rs run --chip STM32F469NIHx firmware
 # If that fails, full power cycle
 ```
 
+### USB PHY Reset After st-flash Soft Reset
+
+When `st-flash --connect-under-reset reset` performs a soft reset (SYSRESETREQ), the USB OTG FS peripheral can be left in an inconsistent state where the PHY doesn't re-enumerate on subsequent boots. This affects all USB CDC firmware.
+
+**Fix**: Call `embassy_stm32f469i_disco::reset_usb_phy()` **before** creating the USB driver. The BSP provides this function that performs a complete reset sequence:
+1. Disable USB OTG FS clock
+2. Assert USB OTG FS peripheral reset
+3. Perform core soft reset (GRSTCTL.CSRST)
+4. Power-cycle the PHY (GCCFG.PWRDWN)
+
+```rust
+let p = embassy_stm32::init(config_168());
+
+// Reset USB PHY for clean re-enumeration
+embassy_stm32f469i_disco::reset_usb_phy();
+
+// Now create USB driver
+let driver = embassy_stm32::usb::Driver::new_fs(
+    p.USB_OTG_FS,
+    Irqs,
+    p.PA12,
+    p.PA11,
+    ep_out_buffer,
+    usb_config,
+);
+```
+
+**Affected:** micronuts#34, microfips#105, gm65-scanner#56 — all three projects independently discovered this issue.
+**Reference:** `src/usb.rs` module in this BSP
+
 ## Embassy USB Investigation (embassy-rs/embassy#5738)
 
 PR #5738 claimed `configure_endpoints()` setting SNAK on IN endpoints causes USB hangs. Our testing on STM32F469I-DISCO showed:
@@ -324,6 +354,14 @@ When `probe-rs run` is attached for RTT logging, RTT may be left in blocking mod
 **Affected:** gm65-scanner#39, micronuts#18/#19, microfips#2/#3, embassy BSP (probe-rs breaks USB)
 **Fix:** Use `st-flash` for USB firmware deployment. Never `probe-rs run` during USB testing.
 **Reference:** embassy BSP Known Issues, gm65-scanner#19
+
+### USB OTG FS Re-enumeration After Soft Reset (3 projects)
+
+`st-flash` soft reset doesn't properly reset USB PHY. Device doesn't re-enumerate after SYSRESETREQ.
+
+**Affected:** micronuts#34, microfips#105, gm65-scanner#56
+**Fix:** Full power cycle, or explicit USB PHY reset sequence in firmware.
+**Reference:** embassy BSP `src/usb.rs::reset_usb_phy()`
 
 ### FT6X06 Phantom Touch Events (3 projects)
 

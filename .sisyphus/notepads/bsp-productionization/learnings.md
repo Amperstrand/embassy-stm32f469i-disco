@@ -250,3 +250,102 @@
 - In generic code, inherent methods on the concrete type are invisible — only trait methods are visible, so no ambiguity between blocking/async `write_read`
 - Blanket `impl<E> From<E> for TouchError<E>` is safe (no conflict with reflexive impl since `TouchError<E> != E`)
 - When making a struct generic and storing a resource, the constructor signature change is the biggest API surface impact — all call sites need updating
+
+## [2026-05-08] Task 12: Add EdgeFilter for FT6X06 phantom-touch rejection
+
+### Changes made
+- Added `EdgeFilter` struct with `left`, `right`, `top`, `bottom: u16` fields (public)
+- Added `EdgeFilter::new(left, right, top, bottom)` const constructor
+- Added `EdgeFilter::default_ft6x06()` const constructor returning `{ left: 3, right: 476, top: 3, bottom: 796 }`
+- Added `filter: Option<EdgeFilter>` field to `TouchCtrl` (initialized to `None` by default)
+- Added `TouchCtrl::with_filter(self, filter: EdgeFilter) -> Self` builder method (opt-in)
+- Changed `get_touch()` return type from `Result<TouchPoint, E>` to `Result<Option<TouchPoint>, E>`
+- Touch read path returns `Ok(None)` for points outside filter bounds or when no touch is detected
+- Updated `TouchPoint` docstring to reference `EdgeFilter::default_ft6x06()` instead of inline filtering advice
+
+### Design decisions
+- **Opt-in API**: Filter is disabled by default (`filter: None` in `new()`) — consumers must call `with_filter()` to enable
+- **Breaking change**: `get_touch()` now returns `Result<Option<TouchPoint>>` instead of `Result<TouchPoint>` — this is justified because:
+  - The API was not yet stable (no 1.0 release)
+  - The new semantics correctly distinguish "no touch detected" from "I2C error"
+  - The alternative (returning a sentinel touch point like `(0, 0)`) would be more error-prone
+- **Const constructors**: Both `new()` and `default_ft6x06()` are `const fn` for use in static contexts
+- **Hardware-verified values**: `default_ft6x06()` uses values from micronuts firmware (3px margin, hardware-verified to eliminate phantom touches)
+- **Cross-reference to AGENTS.md**: `EdgeFilter::default_ft6x06()` docstring explicitly references the "FT6X06 Phantom Touch Events" section in AGENTS.md
+
+### Rustdoc documentation strategy
+- All public items (`EdgeFilter` struct, fields, methods) have comprehensive docstrings
+- Docstring on `EdgeFilter::default_ft6x06()` explains the hardware-verified filter values and references AGENTS.md (as required by task)
+- Docstring on `with_filter()` includes a code example showing the builder pattern usage
+- Docstring on `get_touch()` clearly documents the three possible return outcomes:
+  - `Ok(Some(point))` — valid touch detected and passes filter (if enabled)
+  - `Ok(None)` — no touch detected OR touch filtered out
+  - `Err(...)` — I2C communication failure
+
+### Clippy lesson: doc_lazy_continuation
+- Fixed `clippy::doc_lazy_continuation` warning by adding a blank line before "Returns `Err(...)`" in `get_touch()` docstring
+- The warning fires when a bullet list is followed by text without separation — Rustdoc interprets the line as a list item, requiring indentation or a blank paragraph break
+
+### Verification
+- `cargo build --target thumbv7em-none-eabihf --features touch` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings` exits 0
+- Evidence saved to `.sisyphus/evidence/task-12-build.txt`
+
+### Lessons
+- Edge filtering is a cross-cutting concern that affects multiple Amperstrand STM32F469 projects — providing a reusable `EdgeFilter` struct in the BSP avoids duplication
+- The FT6X06 phantom touch issue is electrical noise at screen edges (x=0, y=445, x=479, y=767) — a 3px margin is hardware-verified to eliminate false positives
+- Builder pattern for optional features (like `with_filter()`) keeps the common case simple while enabling advanced use cases
+- Changing return types from `Result<T>` to `Result<Option<T>>` is a reasonable breaking change pre-1.0 if it makes the API semantics more precise (distinguishing "no result" from "error")
+- Clippy's `doc_lazy_continuation` lint catches formatting issues in rustdoc that would render incorrectly — the fix is either indenting the line or adding a blank paragraph break
+
+## [2026-05-08] Task 15: Add embedded-test on-target HIL runner
+
+### Changes made
+- Added `embedded-test` as a dev-dependency using the current 0.7.1 release with `embassy-010`
+- Added `embedded-test-linker-script` to regular dependencies so `build.rs` can unconditionally link `embedded-test.x`
+- Configured a dedicated target runner in `.cargo/config.toml` for `thumbv7em-none-eabihf`: `probe-rs run --chip STM32F469NIHx`
+- Added `[[test]] name = "on_target"` with `harness = false`
+- Created `tests/on_target.rs` with three async HIL tests:
+  - SDRAM write/read pattern over the first 1024 words
+  - Display bring-up using `Board::new(..., BoardHint::ForceNt35510)` and LTDC register assertions
+  - Touch vendor-ID read (`0xA8 == 0x11`)
+- Added `tests/README.md` documenting prerequisites, build-only usage, and hardware run procedure
+
+### Important embedded-test integration lessons
+- `embedded-test` 0.5 was incompatible with this repo because it depends on `embassy-executor` 0.6 and expects a root-level `Executor` export that no longer exists in embassy 0.10
+- The current supported path is `embedded-test = 0.7.x` with feature `embassy-010`, which matches the repo's `embassy-executor` 0.10 stack
+- For 0.7.x, the linker arg must be unconditional (`cargo:rustc-link-arg=-Tembedded-test.x`), which is why `embedded-test-linker-script` must live in `[dependencies]`, not `[dev-dependencies]`
+- The 0.7.x `#[embedded_test::tests]` macro supports `#[timeout(...)]` per test; suite-level `default_timeout` is documented but the conservative, unambiguous option is per-test timeouts
+
+### Cargo/test harness lessons
+- `cargo test --target thumbv7em-none-eabihf --no-run` still tries to build test harness variants of examples unless examples are explicitly marked `test = false`
+- Setting `[lib] test = false` avoids building a host-style libtest harness for this no-std BSP crate
+- Existing examples can compile cleanly under embassy 0.10, but `cargo test --no-run` needs explicit metadata to keep Cargo from generating test variants that would fail for embedded targets
+
+### BSP-specific test design notes
+- `Board::new()` is the simplest path for display + touch HIL tests because it applies the known-good 180MHz initialization sequence for SDRAM/display/touch together
+- `BoardHint::ForceNt35510` is preferable in HIL tests to avoid flaky DSI auto-detect reads; the board is hardware-known to use NT35510
+- Touch vendor-ID reads require display init first because FT6X06 power comes from the display module
+- For display success, asserting `LTDC.gcr().read().ltdcen()` and `LTDC.layer(0).cr().read().len()` gives a meaningful non-visual register-level pass condition
+
+### Verification
+- `cargo test --target thumbv7em-none-eabihf --no-run` exits 0 after the runner/test harness changes
+- `lsp_diagnostics` clean on `tests/on_target.rs`, `examples/test_display_interactive.rs`, and `build.rs`
+
+### Lessons
+- On embedded no-std crates, getting `cargo test --no-run` green often requires Cargo metadata work (`test = false`, `harness = false`) in addition to the test source itself
+- `embedded-test` version selection must track the major embassy-executor generation in the repo; mismatched executor generations fail at compile time in non-obvious ways
+
+## [2026-05-08] Task 17a: nt35510 upstream API patch release
+
+### Changes made upstream
+- Added optional `defmt` feature with `defmt::Format` derives on the public API types in `nt35510`
+- Added additive public helpers: `is_initialized`, `sleep_out`, `soft_reset`, `set_inversion`, `set_display_on`, `set_display_off`, `read_brightness`, `read_id`, `get_scan_line`, and `PanelTiming::for_mode_dsi`
+- Added `Default` impls for `Mode`, `ColorMap`, `ColorFormat`, and `PanelTiming`
+- Added docs for missing public items and proprietary register constants, plus README/changelog updates
+- Released as patch version `0.2.1` because the upstream crate was already at `0.2.0` and all accepted changes were additive
+
+### Lessons
+- `cargo publish --dry-run` on a dirty tree fails before packaging verification unless changes are committed or `--allow-dirty` is used; for release rehearsal, commit first, then dry-run
+- For no-std driver crates, feature-gated `defmt::Format` derives fit cleanly via `defmt = { optional = true }` plus `cfg_attr(feature = "defmt", derive(defmt::Format))`
+- Public power-management helpers (`sleep_in`/`sleep_out`, display on/off, inversion) are low-risk additive API improvements when the underlying DCS commands already exist in the crate
