@@ -48,6 +48,9 @@ pub mod display;
 #[cfg(feature = "touch")]
 pub mod touch;
 
+#[cfg(all(feature = "display", feature = "touch"))]
+mod board;
+
 #[cfg(feature = "display")]
 pub use display::{
     Argb8888, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError, Rgb565, FB_HEIGHT,
@@ -65,3 +68,6 @@ pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 
 #[cfg(feature = "touch")]
 pub use touch::{TouchCtrl, TouchError, TouchPoint};
+
+#[cfg(all(feature = "display", feature = "touch"))]
+pub use board::{Board, Leds, SdramRemainders, UserButton};

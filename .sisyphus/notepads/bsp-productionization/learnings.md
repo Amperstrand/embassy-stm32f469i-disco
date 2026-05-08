@@ -194,3 +194,22 @@
 ### Lessons
 - Structural extraction can preserve behavior by moving panel-specific policy/helpers as a unit while leaving board-level display sequencing in the orchestrator module
 - T16 handoff notes are easiest to write at split time, while the boundary between controller-generic logic and BSP-specific glue is still fresh
+
+## [2026-05-08] Task 10: Add ergonomic Board API
+
+### Changes made
+- Added new `src/board.rs` gated behind `all(feature = "display", feature = "touch")` so `--no-default-features` still builds cleanly
+- Introduced `Board::new(p, hint)` to initialize SDRAM, consume its framebuffer bytes for `DisplayCtrl`, construct a `TouchCtrl` handle, and expose active-low LEDs plus PA0 user button
+- Added `Leds`, `UserButton`, and `SdramRemainders` helper structs; `SdramRemainders` preserves access to USART6 pins PG14/PG9 for scanner integrations
+- Re-exported `Board`, `Leds`, `UserButton`, and `SdramRemainders` from `src/lib.rs` without changing the existing lower-level `SdramCtrl`, `DisplayCtrl`, or `TouchCtrl` constructors
+
+### Verification
+- `lsp_diagnostics` clean for `src/board.rs`, `src/lib.rs`, and `src/`
+- `cargo build --target thumbv7em-none-eabihf --examples` exits 0
+- `cargo build --target thumbv7em-none-eabihf --no-default-features` exits 0
+- `cargo clippy --target thumbv7em-none-eabihf --all-features --lib -- -D warnings` exits 0
+- Evidence saved to `.sisyphus/evidence/task-10-build.txt`
+
+### Lessons
+- For ergonomic board wrappers in Embassy BSPs, deriving SDRAM timing from `rcc::clocks(&p.RCC).hclk1.to_hertz()` avoids hard-coding 180 MHz and keeps `Board::new` compatible with alternate valid clock presets
+- Gating whole-board convenience APIs on the exact subsystem features they require is simpler and lower-risk than adding optional fields throughout the public struct
