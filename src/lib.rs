@@ -18,14 +18,12 @@
 //! configuring PLL/PLLSAI. See [`clock`] module for details.
 
 #![no_std]
-#![allow(clippy::unnecessary_cast)]
-#![allow(clippy::identity_op)]
-#![allow(clippy::single_match)]
-#![allow(clippy::new_without_default)]
 
 pub mod clock;
+pub mod usb;
 
 pub use clock::{config_168, config_180, config_usb_only, SYSCLK_HZ_168, SYSCLK_HZ_180};
+pub use usb::reset_usb_phy;
 
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
 #[cfg(feature = "display")]
