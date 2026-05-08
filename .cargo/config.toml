@@ -1,5 +1,7 @@
-[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+[target.thumbv7em-none-eabihf]
 runner = "probe-rs run --chip STM32F469NIHx"
+
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
 # cortex-m-rt and defmt emit cargo:rustc-link-search but NOT the -T flags themselves.
 # These -T args tell the linker to use link.x / defmt.x as linker scripts.
 # build.rs emits cargo:rustc-link-search=$OUT_DIR so memory.x is found alongside them.
