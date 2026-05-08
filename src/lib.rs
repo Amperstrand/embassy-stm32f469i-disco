@@ -25,6 +25,9 @@ pub mod usb;
 pub use clock::{config_168, config_180, config_usb_only, SYSCLK_HZ_168, SYSCLK_HZ_180};
 pub use usb::reset_usb_phy;
 
+#[cfg(feature = "display")]
+mod sdram;
+
 /// Display subsystem: SDRAM controller, DSI/LTDC display, NT35510 panel driver.
 #[cfg(feature = "display")]
 pub mod display;
@@ -36,8 +39,11 @@ pub mod touch;
 #[cfg(feature = "display")]
 pub use display::{
     Argb8888, BoardHint, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError,
-    FramebufferView, LcdController, Rgb565, SdramCtrl, FB_HEIGHT, FB_WIDTH, SDRAM_SIZE_BYTES,
+    FramebufferView, LcdController, Rgb565, FB_HEIGHT, FB_WIDTH,
 };
+
+#[cfg(feature = "display")]
+pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 
 #[cfg(feature = "touch")]
 pub use touch::{TouchCtrl, TouchError, TouchPoint};
