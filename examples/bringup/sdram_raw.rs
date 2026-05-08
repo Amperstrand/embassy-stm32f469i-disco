@@ -9,37 +9,6 @@ use embassy_stm32::Config;
 use embassy_stm32f469i_disco::display::SdramCtrl;
 use embassy_time::Timer;
 
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn LTDC() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn LTDC_ER() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn DSI() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn DSIHOST() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn DMA2D() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn FMC() {
-    cortex_m::asm::nop();
-}
-
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
     let mut p = embassy_stm32::init(Config::default());

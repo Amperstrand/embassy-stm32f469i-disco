@@ -25,7 +25,7 @@ Run each BSP example on the STM32F469I-DISCO board and record pass/fail. Use thi
  The kills probe-rs (since the loops forever), and parses pass/fail counts.
 
 - **Remote** (e.g. build here, SCP ELF, run on remote host): The example. Run probe-rs there. See defmt in the like "Initializing SDRAM...", "PASS", etc. Watch for "PASS" in logs, Confirm SDRAM, display, or observe board does not reset. |
-- **USB CDC** and **SD card**: These can also be validated without hardware. The RTT logs. Use `test_usb_cdc` and `tests/usb_cdc_test.py` instead.
+ - **USB CDC** and **SD card**: These can also be validated without hardware. The RTT logs. Use `test_usb_cdc_stress` and `tests/usb_cdc_stress.py` instead.
 
  `run_tests.sh` for USB tests (see [USB testing](#usb-testing).
 
@@ -48,7 +48,7 @@ Run in this order to isolate failures (e.g. probe first, then SDRAM, then displa
 | 9 | test_rng | RNG | `./run_tests.sh test_rng` (84MHz PLL) | 3/3 tests pass | RNG uniqueness tests |
 | 10 | test_adc | ADC | `./run_tests.sh test_adc` | 2/2 tests pass | Internal temperature and VREFINT reads |
 | 11 | test_dma | DMA | `./run_tests.sh test_dma` | 5/5 tests pass | DMA2 mem-to-mem transfers |
-| 12 | test_usb_cdc | USB CDC | `./run_usb_cdc_test.sh` | 3/3 tests pass | USB enumeration, CDC init, echo |
+| 12 | test_usb_cdc_stress | USB CDC | `./run_usb_tests.sh` | 600/600 packets pass | USB stress test, continuous echo |
 | 13 | hw_diag | All subsystems | `probe-rs run --chip STM32F469NIHx --example hw_diag` | On-screen diagnostics (SDRAM, display, touch, GPIO, LEDs, timers) |
 
 ## How to use this runbook

@@ -40,13 +40,13 @@ Consumers must apply this filter themselves.
 
 ```bash
 # Build USB test
-cargo build --release --example test_usb_cdc --target thumbv7em-none-eabihf
+cargo build --release --example test_usb_cdc_stress --target thumbv7em-none-eabihf
 
 # Flash with st-flash (NOT probe-rs)
-st-flash write target/thumbv7em-none-eabihf/release/examples/test_usb_cdc.bin 0x08000000
+st-flash write target/thumbv7em-none-eabihf/release/examples/test_usb_cdc_stress.bin 0x08000000
 
 # Connect USB cable and test
-python3 tests/host/test_usb_host.py --device /dev/ttyACM0 --duration 60
+python3 tests/usb_cdc_stress.py --port /dev/ttyACM0
 ```
 
 See [USB-GUIDE.md](USB-GUIDE.md) for full USB CDC setup instructions.

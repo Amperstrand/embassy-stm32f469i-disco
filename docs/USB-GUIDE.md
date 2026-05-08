@@ -156,7 +156,6 @@ The 180MHz PLL config cannot produce 48MHz:
 
 ## Related Examples
 
-- `examples/test_usb_cdc.rs` - USB CDC connectivity test
 - `examples/test_usb_cdc_stress.rs` - USB CDC stress test
 - `tests/usb_cdc_stress.py` - Host-side stress test
 - `tests/usb_cdc_test.py` - Host-side test monitor

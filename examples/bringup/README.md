@@ -12,7 +12,7 @@ These examples contain raw register access, `unsafe` code, and workarounds that 
 | `raw_display_minimal.rs` | Minimal DSI display test (mirrors verified embassy dsi_bsp.rs) |
 | `clk48_hypothesis.rs` | CK48MSEL hypothesis test (issue #27, PLLSAI vs DCKCFGR2) |
 | `nt35510_register_probe.rs` | NT35510 panel register reads, ID verification, DSI command tests |
-| `sdram_raw.rs` | SDRAM initialization and quick memory test with stub IRQ handlers |
+| `sdram_raw.rs` | SDRAM initialization and quick memory test |
 
 ## New Users
 

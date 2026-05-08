@@ -119,7 +119,7 @@ let mut fb = display.fb();
 fb.clear(Rgb888::new(0, 0, 0));
 ```
 
-See `examples/display_blinky.rs` for a complete working example.
+See `examples/board_display.rs` for a complete working example.
 
 ### Touch
 
