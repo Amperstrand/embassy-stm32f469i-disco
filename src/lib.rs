@@ -18,6 +18,7 @@
 //! configuring PLL/PLLSAI. See [`clock`] module for details.
 
 #![warn(missing_docs)]
+#![deny(unsafe_op_in_unsafe_fn)]
 #![no_std]
 
 pub mod clock;
@@ -54,8 +55,8 @@ mod board;
 
 #[cfg(feature = "display")]
 pub use display::{
-    Argb8888, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError, Rgb565, FB_HEIGHT,
-    FB_WIDTH,
+    Argb8888, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError, DisplayOrientation, Rgb565,
+    FB_HEIGHT, FB_WIDTH,
 };
 
 #[cfg(feature = "display")]
@@ -68,7 +69,7 @@ pub use framebuffer::FramebufferView;
 pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 
 #[cfg(feature = "touch")]
-pub use touch::{TouchCtrl, TouchError, TouchPoint};
+pub use touch::{EdgeFilter, TouchCtrl, TouchError, TouchPoint};
 
 #[cfg(all(feature = "display", feature = "touch"))]
 pub use board::{Board, Leds, SdramRemainders, UserButton};
