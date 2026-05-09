@@ -1,9 +1,12 @@
-//! Blink all 4 user LEDs in sequence using the Board API.
+//! Minimal LED blink using the Board API.
+//!
+//! Toggles the green LED (PG6, LD1) once per second and logs the blink count
+//! over RTT so a logic analyzer is not required to confirm heartbeat.
 //!
 //! Build:
 //!   cargo build --target thumbv7em-none-eabihf --example board_blinky
 //!
-//! Flash:
+//! Flash and run:
 //!   probe-rs run --chip STM32F469NIHx --example board_blinky
 
 #![no_std]
@@ -20,21 +23,14 @@ async fn main(_spawner: Spawner) {
     let p = embassy_stm32::init(config_180());
     let mut board = Board::try_new(p, BoardHint::Auto).expect("board init");
 
-    info!("board_blinky: starting LED sequence");
-
-    // LEDs are active-low: set_low = on, set_high = off
+    // LEDs are active-low: set_low = on, set_high = off.
+    let mut n: u32 = 0;
     loop {
         board.leds.green.set_low();
-        Timer::after_millis(250).await;
+        Timer::after_secs(1).await;
         board.leds.green.set_high();
-        board.leds.orange.set_low();
-        Timer::after_millis(250).await;
-        board.leds.orange.set_high();
-        board.leds.red.set_low();
-        Timer::after_millis(250).await;
-        board.leds.red.set_high();
-        board.leds.blue.set_low();
-        Timer::after_millis(250).await;
-        board.leds.blue.set_high();
+        Timer::after_secs(1).await;
+        info!("blink {}", n);
+        n = n.wrapping_add(1);
     }
 }
