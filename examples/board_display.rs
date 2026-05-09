@@ -38,9 +38,14 @@ async fn main(_spawner: Spawner) {
         .unwrap();
 
     let text_style = MonoTextStyle::new(&FONT_10X20, Rgb888::WHITE);
-    Text::with_baseline("Hello STM32F469!", Point::new(100, 400), text_style, Baseline::Top)
-        .draw(&mut fb)
-        .unwrap();
+    Text::with_baseline(
+        "Hello STM32F469!",
+        Point::new(100, 400),
+        text_style,
+        Baseline::Top,
+    )
+    .draw(&mut fb)
+    .unwrap();
 
     info!("board_display: text drawn, blinking LED");
 

@@ -55,8 +55,8 @@ mod board;
 
 #[cfg(feature = "display")]
 pub use display::{
-    Argb8888, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError, DisplayOrientation, Rgb565,
-    FB_HEIGHT, FB_WIDTH,
+    Argb8888, DisplayCtrl, DisplayCtrlCtor, DisplayFormat, DisplayInitError, DisplayOrientation,
+    Rgb565, FB_HEIGHT, FB_WIDTH,
 };
 
 #[cfg(feature = "display")]

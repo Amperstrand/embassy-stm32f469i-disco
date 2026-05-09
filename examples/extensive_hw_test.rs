@@ -9,10 +9,10 @@ use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
 use embassy_stm32::usart::Uart;
 use embassy_stm32::Peripherals;
+use embassy_stm32f469i_disco::touch::{EdgeFilter, TouchPoint};
 use embassy_stm32f469i_disco::{
     config_180, Board, BoardHint, FramebufferView, FB_HEIGHT, FB_WIDTH, SDRAM_SIZE_BYTES,
 };
-use embassy_stm32f469i_disco::touch::{EdgeFilter, TouchPoint};
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_6X9, MonoTextStyle, MonoTextStyleBuilder},
@@ -21,8 +21,8 @@ use embedded_graphics::{
     primitives::{Line, PrimitiveStyle, PrimitiveStyleBuilder, Rectangle},
     text::Text,
 };
-use embedded_io::Write as _;
 use embedded_hal_02::blocking::serial::Write as _;
+use embedded_io::Write as _;
 
 #[allow(non_snake_case)]
 #[no_mangle]
@@ -111,12 +111,21 @@ unsafe fn flush_to_ccmram() {
     let buf = CCMRAM_BASE as *mut TestResultBuffer;
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).magic), RESULT_MAGIC);
     core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).count), RESULT_COUNT as u32);
-    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).pass_count), PASS_COUNT as u32);
-    core::ptr::write_volatile(core::ptr::addr_of_mut!((*buf).fail_count), FAIL_COUNT as u32);
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*buf).pass_count),
+        PASS_COUNT as u32,
+    );
+    core::ptr::write_volatile(
+        core::ptr::addr_of_mut!((*buf).fail_count),
+        FAIL_COUNT as u32,
+    );
     for (i, (name, passed)) in RESULTS[..RESULT_COUNT.min(MAX_TESTS)].iter().enumerate() {
         let entry = core::ptr::addr_of_mut!((*buf).entries[i]);
         copy_name(&mut (*entry).name, name);
-        core::ptr::write_volatile(core::ptr::addr_of_mut!((*entry).passed), if *passed { 1 } else { 0 });
+        core::ptr::write_volatile(
+            core::ptr::addr_of_mut!((*entry).passed),
+            if *passed { 1 } else { 0 },
+        );
     }
 }
 
@@ -198,17 +207,17 @@ fn make_run_style() -> MonoTextStyle<'static, Rgb888> {
         .build()
 }
 
-fn draw_text(fb: &mut FramebufferView<'_>, text: &str, x: i32, y: i32, style: &MonoTextStyle<Rgb888>) {
-    Text::new(text, Point::new(x, y), *style).draw(fb).ok();
-}
-
-fn draw_u32(
+fn draw_text(
     fb: &mut FramebufferView<'_>,
+    text: &str,
     x: i32,
     y: i32,
     style: &MonoTextStyle<Rgb888>,
-    val: u32,
 ) {
+    Text::new(text, Point::new(x, y), *style).draw(fb).ok();
+}
+
+fn draw_u32(fb: &mut FramebufferView<'_>, x: i32, y: i32, style: &MonoTextStyle<Rgb888>, val: u32) {
     let mut buf = [0u8; 12];
     let mut i = buf.len();
     let mut v = val;
@@ -451,10 +460,26 @@ async fn phase1_raw_tests(peri: &Peripherals) {
 
     unsafe { trun("LED All Toggle") };
     {
-        let mut green = Output::new(unsafe { peri.PG6.clone_unchecked() }, Level::High, Speed::Low);
-        let mut orange = Output::new(unsafe { peri.PD4.clone_unchecked() }, Level::High, Speed::Low);
-        let mut red = Output::new(unsafe { peri.PD5.clone_unchecked() }, Level::High, Speed::Low);
-        let mut blue = Output::new(unsafe { peri.PK3.clone_unchecked() }, Level::High, Speed::Low);
+        let mut green = Output::new(
+            unsafe { peri.PG6.clone_unchecked() },
+            Level::High,
+            Speed::Low,
+        );
+        let mut orange = Output::new(
+            unsafe { peri.PD4.clone_unchecked() },
+            Level::High,
+            Speed::Low,
+        );
+        let mut red = Output::new(
+            unsafe { peri.PD5.clone_unchecked() },
+            Level::High,
+            Speed::Low,
+        );
+        let mut blue = Output::new(
+            unsafe { peri.PK3.clone_unchecked() },
+            Level::High,
+            Speed::Low,
+        );
         for _ in 0..3 {
             green.toggle();
             orange.toggle();
@@ -519,7 +544,11 @@ async fn phase1_raw_tests(peri: &Peripherals) {
                     });
                     rng.cr().modify(|w| w.set_rngen(true));
                 } else if sr.drdy() {
-                    return if rng.dr().read() != 0 { Ok(()) } else { Err("zero") };
+                    return if rng.dr().read() != 0 {
+                        Ok(())
+                    } else {
+                        Err("zero")
+                    };
                 }
                 timeout -= 1;
                 if timeout == 0 {
@@ -567,7 +596,11 @@ async fn phase1_raw_tests(peri: &Peripherals) {
                     unique += 1;
                 }
             }
-            if unique >= 32 { Ok(()) } else { Err("repeat") }
+            if unique >= 32 {
+                Ok(())
+            } else {
+                Err("repeat")
+            }
         });
 
         tpass_fn("RNG Consecutive Differ", || {
@@ -612,14 +645,20 @@ async fn phase1_raw_tests(peri: &Peripherals) {
                 }
             };
 
-            if first != second { Ok(()) } else { Err("same") }
+            if first != second {
+                Ok(())
+            } else {
+                Err("same")
+            }
         });
     }
 
     stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
     unsafe {
         tpass_fn("ADC Temp Sensor", || {
-            stm32_metapac::ADC123_COMMON.ccr().modify(|w| w.set_tsvrefe(true));
+            stm32_metapac::ADC123_COMMON
+                .ccr()
+                .modify(|w| w.set_tsvrefe(true));
             cortex_m::asm::delay(10_000);
             let adc = stm32_metapac::ADC1;
             adc.cr2().modify(|w| {
@@ -670,7 +709,12 @@ async fn phase1_raw_tests(peri: &Peripherals) {
 async fn phase2_sdram_and_display(board: &mut Board) {
     defmt::info!("=== Phase 2: Display init + SDRAM tests ===");
     unsafe { tpass("Display Init") };
-    render_results_screen(board, "Phase 2", "Display initialized with ForceNt35510", "");
+    render_results_screen(
+        board,
+        "Phase 2",
+        "Display initialized with ForceNt35510",
+        "",
+    );
     Timer::after(Duration::from_millis(400)).await;
 
     unsafe {
@@ -692,7 +736,12 @@ async fn phase2_sdram_and_display(board: &mut Board) {
             Err(reason) => tfail("SDRAM Checkerboard", reason),
         }
     }
-    render_results_screen(board, "Phase 2", "Running SDRAM tests", "SDRAM Checkerboard");
+    render_results_screen(
+        board,
+        "Phase 2",
+        "Running SDRAM tests",
+        "SDRAM Checkerboard",
+    );
 
     unsafe {
         trun("SDRAM March C-");
@@ -865,7 +914,10 @@ fn draw_color_bars(fb: &mut FramebufferView<'_>) {
 
 fn draw_grid_pattern(fb: &mut FramebufferView<'_>) {
     fb.clear(BG);
-    let grid = PrimitiveStyleBuilder::new().stroke_color(DIM_TEXT).stroke_width(1).build();
+    let grid = PrimitiveStyleBuilder::new()
+        .stroke_color(DIM_TEXT)
+        .stroke_width(1)
+        .build();
     for x in (0..=FB_WIDTH as i32).step_by(80) {
         Line::new(Point::new(x, 0), Point::new(x, FB_HEIGHT as i32 - 1))
             .into_styled(grid)
@@ -929,7 +981,12 @@ async fn phase4_touch(board: &mut Board) {
 
     render_results_screen(board, "Phase 4", "Touch metadata checks complete", "");
     Timer::after(Duration::from_secs(1)).await;
-    wait_for_user_confirmation(board, "Touch Demo", "Confirm to start 30-second touch test.").await;
+    wait_for_user_confirmation(
+        board,
+        "Touch Demo",
+        "Confirm to start 30-second touch test.",
+    )
+    .await;
 
     let mut touch_count = 0u32;
     let mut had_i2c_error = false;
@@ -942,7 +999,13 @@ async fn phase4_touch(board: &mut Board) {
         let ts = make_style();
         draw_text(&mut fb, "Touch Demo", 8, 10, &hs);
         draw_text(&mut fb, "Touch the screen for 30 seconds.", 8, 30, &ts);
-        draw_text(&mut fb, "Yellow crosshairs mark filtered touch points.", 8, 42, &ts);
+        draw_text(
+            &mut fb,
+            "Yellow crosshairs mark filtered touch points.",
+            8,
+            42,
+            &ts,
+        );
         draw_text(&mut fb, "Touches:", 8, 60, &ts);
         draw_u32(&mut fb, 58, 60, &ts, 0);
         draw_text(&mut fb, "Time left:", 120, 60, &ts);
@@ -1137,8 +1200,12 @@ async fn phase5_uart_dma(board: &mut Board, peri: &Peripherals) {
     stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
     unsafe {
         tpass_fn("DMA 64B Transfer", || run_dma_transfer_test(0x40_000, 64));
-        tpass_fn("DMA 1024B Transfer", || run_dma_transfer_test(0x48_000, 1024));
-        tpass_fn("DMA 4096B Transfer", || run_dma_transfer_test(0x50_000, 4096));
+        tpass_fn("DMA 1024B Transfer", || {
+            run_dma_transfer_test(0x48_000, 1024)
+        });
+        tpass_fn("DMA 4096B Transfer", || {
+            run_dma_transfer_test(0x50_000, 4096)
+        });
         tpass_fn("DMA Repeated 10x", || {
             for i in 0..10 {
                 run_dma_transfer_test(0x60_000 + i * 0x4000, 256)?;
@@ -1200,7 +1267,9 @@ async fn main(_spawner: Spawner) {
     phase5_uart_dma(&mut board, &peri).await;
     phase6_summary(&mut board).await;
 
-    unsafe { mark_done(); }
+    unsafe {
+        mark_done();
+    }
     defmt::info!("Results at CCMRAM 0x10000000. Run: python3 tests/read_test_results.py");
 
     loop {

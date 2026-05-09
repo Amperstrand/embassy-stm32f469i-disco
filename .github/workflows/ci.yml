@@ -17,6 +17,7 @@ jobs:
       matrix:
         features:
           - "--no-default-features"
+          - "--no-default-features --features bringup"
           - "--features display"
           - "--features touch"
           - "--features display,touch"
@@ -40,7 +41,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Build library (${{ matrix.features }})
-        run: cargo build --target thumbv7em-none-eabihf ${{ matrix.features }}
+        run: cargo build --target thumbv7em-none-eabihf --lib ${{ matrix.features }}
 
   clippy:
     runs-on: ubuntu-latest
@@ -81,7 +82,7 @@ jobs:
 
   doc:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 
@@ -107,7 +108,7 @@ jobs:
 
   package:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
     steps:
       - uses: actions/checkout@v4
 

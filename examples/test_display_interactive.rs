@@ -933,9 +933,7 @@ fn draw_yes_no(fb: &mut embassy_stm32f469i_disco::FramebufferView<'_>) {
     .ok();
 }
 
-async fn wait_for_yes_no(
-    touch: &mut TouchCtrl,
-) -> bool {
+async fn wait_for_yes_no(touch: &mut TouchCtrl) -> bool {
     loop {
         if let Some((tx, ty)) = read_touch_raw(touch) {
             let p = Point::new(tx, ty);
@@ -952,9 +950,7 @@ async fn wait_for_yes_no(
 
 // ── Touch helpers ──
 
-fn read_touch_raw(
-    touch: &mut TouchCtrl,
-) -> Option<(i32, i32)> {
+fn read_touch_raw(touch: &mut TouchCtrl) -> Option<(i32, i32)> {
     match touch.td_status() {
         Ok(s) if s > 0 => match touch.get_touch() {
             Ok(Some(p)) => Some((p.x as i32, p.y as i32)),
@@ -964,10 +960,7 @@ fn read_touch_raw(
     }
 }
 
-async fn read_touch(
-    touch: &mut TouchCtrl,
-    last: &mut Option<(i32, i32)>,
-) -> Option<(i32, i32)> {
+async fn read_touch(touch: &mut TouchCtrl, last: &mut Option<(i32, i32)>) -> Option<(i32, i32)> {
     let (tx, ty) = read_touch_raw(touch)?;
     if tx < MARGIN as i32 || tx > 476 || ty < MARGIN as i32 || ty > 796 {
         return None;

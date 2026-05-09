@@ -54,8 +54,7 @@ async fn main(_spawner: Spawner) {
     draw_overlay(&mut fb);
 
     info!("display_touch: init touch...");
-    let i2c =
-        embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
+    let i2c = embassy_stm32::i2c::I2c::new_blocking(p.I2C1, p.PB8, p.PB9, i2c::Config::default());
     let mut touch = TouchCtrl::new(i2c);
 
     let mut last_touch = None::<Point>;
