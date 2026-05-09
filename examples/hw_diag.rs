@@ -354,9 +354,10 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // --- RNG ---
     stm32_metapac::RCC.ahb2enr().modify(|w| w.set_rngen(true));
+    let mut rng_init_ok = false;
     {
         let rng = stm32_metapac::RNG;
-        rng.cr().modify(|w| w.set_rngen(false));
+        rng.cr().write(|w| w.set_rngen(false));
         rng.sr().modify(|w| {
             w.set_seis(false);
             w.set_ceis(false);
@@ -369,42 +370,17 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 break;
             }
         }
-        let _ = rng.dr().read();
+        if init_timeout > 0 {
+            let _ = rng.dr().read();
+            rng_init_ok = true;
+        }
     }
-    unsafe {
-        tpass_fn("RNG Not Zeros", || {
-            let rng = stm32_metapac::RNG;
-            let mut timeout = 1_000_000u32;
-            loop {
-                let sr = rng.sr().read();
-                if sr.seis() | sr.ceis() {
-                    rng.cr().modify(|w| w.set_rngen(false));
-                    rng.sr().modify(|w| {
-                        w.set_seis(false);
-                        w.set_ceis(false);
-                    });
-                    rng.cr().modify(|w| w.set_rngen(true));
-                } else if sr.drdy() {
-                    let val = rng.dr().read();
-                    if val != 0 {
-                        return true;
-                    }
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    return false;
-                }
-            }
-        })
-    };
-
-    unsafe {
-        tpass_fn("RNG Uniqueness", || {
-            let rng = stm32_metapac::RNG;
-            let mut buf = [0u32; 64];
-            for slot in buf.iter_mut() {
+    if rng_init_ok {
+        unsafe {
+            tpass_fn("RNG Not Zeros", || {
+                let rng = stm32_metapac::RNG;
                 let mut timeout = 1_000_000u32;
-                *slot = loop {
+                loop {
                     let sr = rng.sr().read();
                     if sr.seis() | sr.ceis() {
                         rng.cr().modify(|w| w.set_rngen(false));
@@ -413,82 +389,122 @@ async fn main(_spawner: embassy_executor::Spawner) {
                             w.set_ceis(false);
                         });
                         rng.cr().modify(|w| w.set_rngen(true));
-                        continue;
+                    } else if sr.drdy() {
+                        let val = rng.dr().read();
+                        if val != 0 {
+                            return true;
+                        }
                     }
+                    timeout -= 1;
+                    if timeout == 0 {
+                        return false;
+                    }
+                }
+            })
+        };
+    } else {
+        unsafe { tfail("RNG Not Zeros") };
+    }
+
+    if rng_init_ok {
+        unsafe {
+            tpass_fn("RNG Uniqueness", || {
+                let rng = stm32_metapac::RNG;
+                let mut buf = [0u32; 64];
+                for slot in buf.iter_mut() {
+                    let mut timeout = 1_000_000u32;
+                    *slot = loop {
+                        let sr = rng.sr().read();
+                        if sr.seis() | sr.ceis() {
+                            rng.cr().modify(|w| w.set_rngen(false));
+                            rng.sr().modify(|w| {
+                                w.set_seis(false);
+                                w.set_ceis(false);
+                            });
+                            rng.cr().modify(|w| w.set_rngen(true));
+                            continue;
+                        }
+                        if sr.drdy() {
+                            break rng.dr().read();
+                        }
+                        timeout -= 1;
+                        if timeout == 0 {
+                            return false;
+                        }
+                    };
+                }
+                let mut unique = 0usize;
+                let mut i = 0;
+                while i < 64 {
+                    let mut is_unique = true;
+                    let mut j = 0;
+                    while j < i {
+                        if buf[j] == buf[i] {
+                            is_unique = false;
+                            break;
+                        }
+                        j += 1;
+                    }
+                    if is_unique {
+                        unique += 1;
+                    }
+                    i += 1;
+                }
+                unique >= 32
+            })
+        };
+    } else {
+        unsafe { tfail("RNG Uniqueness") };
+    }
+
+    if rng_init_ok {
+        unsafe {
+            tpass_fn("RNG Consecutive Differ", || {
+                let rng = stm32_metapac::RNG;
+                let mut timeout = 1_000_000u32;
+                let v1 = loop {
+                    let sr = rng.sr().read();
                     if sr.drdy() {
                         break rng.dr().read();
+                    }
+                    if sr.seis() | sr.ceis() {
+                        rng.cr().modify(|w| w.set_rngen(false));
+                        rng.sr().modify(|w| {
+                            w.set_seis(false);
+                            w.set_ceis(false);
+                        });
+                        rng.cr().modify(|w| w.set_rngen(true));
                     }
                     timeout -= 1;
                     if timeout == 0 {
                         return false;
                     }
                 };
-            }
-            let mut unique = 0usize;
-            let mut i = 0;
-            while i < 64 {
-                let mut is_unique = true;
-                let mut j = 0;
-                while j < i {
-                    if buf[j] == buf[i] {
-                        is_unique = false;
-                        break;
+                timeout = 1_000_000u32;
+                let v2 = loop {
+                    let sr = rng.sr().read();
+                    if sr.drdy() {
+                        break rng.dr().read();
                     }
-                    j += 1;
-                }
-                if is_unique {
-                    unique += 1;
-                }
-                i += 1;
-            }
-            unique >= 32
-        })
-    };
-
-    unsafe {
-        tpass_fn("RNG Consecutive Differ", || {
-            let rng = stm32_metapac::RNG;
-            let mut timeout = 1_000_000u32;
-            let v1 = loop {
-                let sr = rng.sr().read();
-                if sr.drdy() {
-                    break rng.dr().read();
-                }
-                if sr.seis() | sr.ceis() {
-                    rng.cr().modify(|w| w.set_rngen(false));
-                    rng.sr().modify(|w| {
-                        w.set_seis(false);
-                        w.set_ceis(false);
-                    });
-                    rng.cr().modify(|w| w.set_rngen(true));
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    return false;
-                }
-            };
-            timeout = 1_000_000u32;
-            let v2 = loop {
-                let sr = rng.sr().read();
-                if sr.drdy() {
-                    break rng.dr().read();
-                }
-                if sr.seis() | sr.ceis() {
-                    rng.cr().modify(|w| w.set_rngen(false));
-                    rng.sr().modify(|w| {
-                        w.set_seis(false);
-                        w.set_ceis(false);
-                    });
-                    rng.cr().modify(|w| w.set_rngen(true));
-                }
-                timeout -= 1;
-                if timeout == 0 {
-                    return false;
-                }
-            };
-            v1 != v2
-        })
-    };
+                    if sr.seis() | sr.ceis() {
+                        rng.cr().modify(|w| w.set_rngen(false));
+                        rng.sr().modify(|w| {
+                            w.set_seis(false);
+                            w.set_ceis(false);
+                        });
+                        rng.cr().modify(|w| w.set_rngen(true));
+                    }
+                    timeout -= 1;
+                    if timeout == 0 {
+                        return false;
+                    }
+                };
+                v1 != v2
+            })
+        };
+    } else {
+        unsafe { tfail("RNG Consecutive Differ") };
+    }
 
     // --- ADC ---
     stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
@@ -918,6 +934,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let dma2 = stm32_metapac::DMA2;
             dma2.st(0).cr().modify(|w| w.set_en(false));
             while dma2.st(0).cr().read().en() {}
+            dma2.ifcr(0).write(|w| {
+                w.set_tcif(0, true);
+                w.set_htif(0, true);
+                w.set_feif(0, true);
+                w.set_dmeif(0, true);
+                w.set_teif(0, true);
+            });
             dma2.st(0).cr().write(|w| {
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
@@ -935,7 +958,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).m0ar().write_value(0xC000_1000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(64));
             dma2.st(0).cr().modify(|w| w.set_en(true));
-            while !dma2.isr(0).read().tcif(0) {}
+            let mut timeout = 5_000_000u32;
+            loop {
+                let isr = dma2.isr(0).read();
+                if isr.tcif(0) {
+                    break;
+                }
+                if isr.teif(0) || isr.dmeif(0) || isr.feif(0) {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+            }
             dma2.ifcr(0).write(|w| {
                 w.set_tcif(0, true);
                 w.set_htif(0, true);
@@ -953,6 +991,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let dma2 = stm32_metapac::DMA2;
             dma2.st(0).cr().modify(|w| w.set_en(false));
             while dma2.st(0).cr().read().en() {}
+            dma2.ifcr(0).write(|w| {
+                w.set_tcif(0, true);
+                w.set_htif(0, true);
+                w.set_feif(0, true);
+                w.set_dmeif(0, true);
+                w.set_teif(0, true);
+            });
             dma2.st(0).cr().write(|w| {
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
@@ -970,7 +1015,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).m0ar().write_value(0xC000_3000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(4096));
             dma2.st(0).cr().modify(|w| w.set_en(true));
-            while !dma2.isr(0).read().tcif(0) {}
+            let mut timeout = 5_000_000u32;
+            loop {
+                let isr = dma2.isr(0).read();
+                if isr.tcif(0) {
+                    break;
+                }
+                if isr.teif(0) || isr.dmeif(0) || isr.feif(0) {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+            }
             dma2.ifcr(0).write(|w| {
                 w.set_tcif(0, true);
                 w.set_htif(0, true);
@@ -988,6 +1048,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
             let dma2 = stm32_metapac::DMA2;
             dma2.st(0).cr().modify(|w| w.set_en(false));
             while dma2.st(0).cr().read().en() {}
+            dma2.ifcr(0).write(|w| {
+                w.set_tcif(0, true);
+                w.set_htif(0, true);
+                w.set_feif(0, true);
+                w.set_dmeif(0, true);
+                w.set_teif(0, true);
+            });
             dma2.st(0).cr().write(|w| {
                 w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                 w.set_circ(false);
@@ -1005,7 +1072,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
             dma2.st(0).m0ar().write_value(0xC000_5000u32);
             dma2.st(0).ndtr().write(|w| w.set_ndt(1024));
             dma2.st(0).cr().modify(|w| w.set_en(true));
-            while !dma2.isr(0).read().tcif(0) {}
+            let mut timeout = 5_000_000u32;
+            loop {
+                let isr = dma2.isr(0).read();
+                if isr.tcif(0) {
+                    break;
+                }
+                if isr.teif(0) || isr.dmeif(0) || isr.feif(0) {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+                timeout -= 1;
+                if timeout == 0 {
+                    dma2.st(0).cr().modify(|w| w.set_en(false));
+                    return false;
+                }
+            }
             dma2.ifcr(0).write(|w| {
                 w.set_tcif(0, true);
                 w.set_htif(0, true);
@@ -1024,6 +1106,13 @@ async fn main(_spawner: embassy_executor::Spawner) {
             for _ in 0..10u32 {
                 dma2.st(0).cr().modify(|w| w.set_en(false));
                 while dma2.st(0).cr().read().en() {}
+                dma2.ifcr(0).write(|w| {
+                    w.set_tcif(0, true);
+                    w.set_htif(0, true);
+                    w.set_feif(0, true);
+                    w.set_dmeif(0, true);
+                    w.set_teif(0, true);
+                });
                 dma2.st(0).cr().write(|w| {
                     w.set_dir(vals::Dir::MEMORY_TO_MEMORY);
                     w.set_circ(false);
@@ -1041,7 +1130,22 @@ async fn main(_spawner: embassy_executor::Spawner) {
                 dma2.st(0).m0ar().write_value(0xC000_7000u32);
                 dma2.st(0).ndtr().write(|w| w.set_ndt(256));
                 dma2.st(0).cr().modify(|w| w.set_en(true));
-                while !dma2.isr(0).read().tcif(0) {}
+                let mut timeout = 5_000_000u32;
+                loop {
+                    let isr = dma2.isr(0).read();
+                    if isr.tcif(0) {
+                        break;
+                    }
+                    if isr.teif(0) || isr.dmeif(0) || isr.feif(0) {
+                        dma2.st(0).cr().modify(|w| w.set_en(false));
+                        return false;
+                    }
+                    timeout -= 1;
+                    if timeout == 0 {
+                        dma2.st(0).cr().modify(|w| w.set_en(false));
+                        return false;
+                    }
+                }
                 dma2.ifcr(0).write(|w| {
                     w.set_tcif(0, true);
                     w.set_htif(0, true);

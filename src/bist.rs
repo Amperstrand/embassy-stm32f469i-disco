@@ -87,14 +87,38 @@ impl BootTestResults {
     /// Returns all test entries as a slice for iteration.
     pub const fn entries(&self) -> [TestEntry; 8] {
         [
-            TestEntry { name: "SDRAM", result: self.sdram },
-            TestEntry { name: "Display", result: self.display },
-            TestEntry { name: "Touch I2C", result: self.touch_i2c },
-            TestEntry { name: "Touch Vendor ID", result: self.touch_vendor_id },
-            TestEntry { name: "Touch Chip Model", result: self.touch_chip_model },
-            TestEntry { name: "Touch Idle", result: self.touch_idle },
-            TestEntry { name: "LEDs", result: self.leds },
-            TestEntry { name: "User Button", result: self.user_button },
+            TestEntry {
+                name: "SDRAM",
+                result: self.sdram,
+            },
+            TestEntry {
+                name: "Display",
+                result: self.display,
+            },
+            TestEntry {
+                name: "Touch I2C",
+                result: self.touch_i2c,
+            },
+            TestEntry {
+                name: "Touch Vendor ID",
+                result: self.touch_vendor_id,
+            },
+            TestEntry {
+                name: "Touch Chip Model",
+                result: self.touch_chip_model,
+            },
+            TestEntry {
+                name: "Touch Idle",
+                result: self.touch_idle,
+            },
+            TestEntry {
+                name: "LEDs",
+                result: self.leds,
+            },
+            TestEntry {
+                name: "User Button",
+                result: self.user_button,
+            },
         ]
     }
 

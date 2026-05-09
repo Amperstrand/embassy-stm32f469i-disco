@@ -115,7 +115,8 @@ impl Board {
         let touch_chip_model_result = touch.read_chip_model();
         let touch_idle_result = touch.td_status();
 
-        let touch_i2c_result = if touch_vendor_id_result.is_ok() || touch_chip_model_result.is_ok() {
+        let touch_i2c_result = if touch_vendor_id_result.is_ok() || touch_chip_model_result.is_ok()
+        {
             TestResult::Pass
         } else {
             TestResult::Fail
@@ -154,7 +155,11 @@ impl Board {
         };
 
         let test_results = BootTestResults {
-            sdram: if sdram_ok { TestResult::Pass } else { TestResult::Fail },
+            sdram: if sdram_ok {
+                TestResult::Pass
+            } else {
+                TestResult::Fail
+            },
             display: display_result,
             touch_i2c: touch_i2c_result,
             touch_vendor_id,
