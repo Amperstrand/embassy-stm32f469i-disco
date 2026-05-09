@@ -85,7 +85,7 @@ pub(crate) fn configure_dsi_host(
         block_for(Duration::from_millis(1));
     }
     if !DSIHOST.wisr().read().rrs() {
-        return Err(DisplayInitError::DsiTimeout);
+        return Err(DisplayInitError::DsiRegulatorTimeout);
     }
 
     DSIHOST.wrpcr().modify(|w| {
@@ -104,7 +104,7 @@ pub(crate) fn configure_dsi_host(
         }
     }
     if !DSIHOST.wisr().read().pllls() {
-        return Err(DisplayInitError::DsiTimeout);
+        return Err(DisplayInitError::DsiPllTimeout);
     }
 
     const VS_POLARITY: bool = false;

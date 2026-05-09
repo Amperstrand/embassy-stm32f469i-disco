@@ -150,9 +150,12 @@ impl DisplayFormat for Rgb565 {
 /// Errors that can occur during display initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
 pub enum DisplayInitError {
-    /// DSI host initialization timed out (regulator or PLL).
-    DsiTimeout,
+    /// DSI host voltage regulator did not become ready within the timeout.
+    DsiRegulatorTimeout,
+    /// DSI host PLL did not lock within the timeout.
+    DsiPllTimeout,
     /// DSI command write to the panel failed.
     DsiWrite,
     /// Panel initialization sequence failed.
