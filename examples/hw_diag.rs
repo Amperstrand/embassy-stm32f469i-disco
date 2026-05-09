@@ -21,16 +21,6 @@ use embedded_graphics::{
 
 #[allow(non_snake_case)]
 #[no_mangle]
-unsafe extern "C" fn LTDC() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
-unsafe extern "C" fn LTDC_ER() {
-    cortex_m::asm::nop();
-}
-#[allow(non_snake_case)]
-#[no_mangle]
 unsafe extern "C" fn DSI() {
     cortex_m::asm::nop();
 }
