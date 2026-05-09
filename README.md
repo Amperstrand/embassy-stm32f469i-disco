@@ -82,7 +82,7 @@ The BSP provides clock presets that handle PLL/PLLSAI configuration. Use [`confi
 ```mermaid
 flowchart LR
     HSE["HSE 8MHz"] --> PLL1["PLL1 180MHz"]
-    HSE --> PLLSAI["PLLSAI 192MHz VCO"]
+    HSE --> PLLSAI["PLLSAI 384MHz VCO"]
     PLL1 --> SYSCLK["SYSCLK 180MHz"]
     PLLSAI --> USB48["48MHz USB<br/>PLLSAI_Q / 8"]
     PLLSAI --> PIXEL["54.86MHz LTDC<br/>PLLSAI_R / 7"]
@@ -153,12 +153,13 @@ See `examples/async_cdc_minimal.rs` for a complete USB CDC example.
 | `UserButton` | struct | PA0 user button |
 | `SdramRemainders` | struct | Free pins after SDRAM init (USART6 TX/RX) |
 | `DisplayCtrl` | struct | DSI/LTDC display controller |
+| `DisplayOrientation` | enum | `Portrait` (default, 480×800) or `Landscape` (800×480) |
 | `FramebufferView` | struct | DrawTarget for embedded-graphics |
 | `SdramCtrl` | struct | FMC SDRAM controller (16 MB) |
 | `TouchCtrl<I2C>` | struct | FT6X06 touch controller (generic over any I2C) |
 | `TouchPoint` | struct | Touch coordinates with `Clone`, `Copy`, `Display` |
 | `TouchError<E>` | enum | Touch controller error type |
-| `EdgeFilter` | struct | Phantom-touch rejection filter, `default_ft6x06()` |
+| `EdgeFilter` | struct | Phantom-touch rejection filter; `Default` = 3px FT6X06 margin, override with `EdgeFilter::none()` |
 | `BoardHint` | enum | `Auto`, `ForceNt35510`, `ForceOtm8009a` |
 | `config_180()` | fn | 180 MHz PLL config (display + USB + touch) |
 | `config_168()` | fn | 168 MHz PLL config |
