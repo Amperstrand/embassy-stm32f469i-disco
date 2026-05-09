@@ -92,6 +92,16 @@ impl EdgeFilter {
     }
 }
 
+impl Default for EdgeFilter {
+    /// Returns the recommended FT6X06 edge filter (3px margin on all sides).
+    ///
+    /// Equivalent to [`EdgeFilter::default_ft6x06()`]. Rejects phantom touches
+    /// at screen edges documented in AGENTS.md "FT6X06 Phantom Touch Events".
+    fn default() -> Self {
+        Self::default_ft6x06()
+    }
+}
+
 /// A single touch coordinate from the FT6X06.
 ///
 /// X ranges 0..479, Y ranges 0..799. Phantom touches may appear at edges —

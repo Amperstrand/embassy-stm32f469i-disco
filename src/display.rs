@@ -239,6 +239,10 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
         BusyDelay.delay_ms(20);
         reset_pin.set_high();
         BusyDelay.delay_ms(140);
+        // SAFETY: `reset_pin` must not be dropped — dropping an `Output` reconfigures
+        // the GPIO to floating input, which would de-assert the panel reset line and
+        // corrupt the display. The panel hardware owns this pin for the lifetime of
+        // the display controller.
         core::mem::forget(reset_pin);
 
         #[cfg(feature = "defmt")]
