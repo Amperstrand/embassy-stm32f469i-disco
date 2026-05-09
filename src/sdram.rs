@@ -133,7 +133,10 @@ impl SdramCtrl {
         unsafe { &mut *core::ptr::slice_from_raw_parts_mut(self.mem.cast::<T>(), len) }
     }
 
-    /// Consume the controller and yield the full SDRAM region as a mutable framebuffer slice.
+    /// Consume the controller and yield the full SDRAM region as a raw `u16` slice.
+    ///
+    /// This is the entire 16 MiB SDRAM region — not a framebuffer view.
+    /// Callers are responsible for sub-slicing into framebuffers and any DMA/cache coherency.
     ///
     /// This is a one-shot operation. The SDRAM is not partitionable after this call.
     /// If multiple regions are needed, a future API may add `into_partitions()`.
@@ -145,13 +148,13 @@ impl SdramCtrl {
     /// ```compile_fail
     /// # use embassy_stm32f469i_disco::SdramCtrl;
     /// # fn demo(sdram: SdramCtrl) {
-    /// let fb1 = sdram.into_framebuffer();
-    /// let fb2 = sdram.into_framebuffer(); // ERROR: use of moved value
+    /// let fb1 = sdram.into_raw_slice();
+    /// let fb2 = sdram.into_raw_slice(); // ERROR: use of moved value
     /// # let _ = (fb1, fb2);
     /// # }
     /// ```
     #[must_use]
-    pub fn into_framebuffer(self) -> &'static mut [u16] {
+    pub fn into_raw_slice(self) -> &'static mut [u16] {
         self.into_slice()
     }
 
@@ -163,8 +166,9 @@ impl SdramCtrl {
 
     /// Run a quick destructive SDRAM smoke test over the first 4 KiB.
     #[must_use]
-    pub fn test_quick(&self) -> bool {
-        // SAFETY: self.mem points to the SDRAM base address returned by stm32-fmc init.
+    pub fn test_quick(&mut self) -> bool {
+        // SAFETY: &mut self guarantees exclusive access; no other live &mut [u32] view exists.
+        // Pointer and length come from the FMC mapping established in SdramCtrl::new.
         // 1024 u32 words = 4 KiB, well within the 16MB SDRAM region.
         let words = unsafe { core::slice::from_raw_parts_mut(self.mem, 1024) };
         for word in words.iter_mut() {

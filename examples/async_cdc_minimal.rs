@@ -48,7 +48,7 @@ async fn main(_spawner: Spawner) {
 
     embassy_stm32f469i_disco::reset_usb_phy();
 
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_168);
+    let mut sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_168);
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
     let framebuffer = sdram.into_bytes();

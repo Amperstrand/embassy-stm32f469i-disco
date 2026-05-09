@@ -349,7 +349,7 @@ async fn main(_spawner: Spawner) {
     reset.set_high();
     block_for(Duration::from_millis(140));
 
-    let fb: &'static mut [u16] = sdram.into_framebuffer();
+    let fb: &'static mut [u16] = sdram.into_raw_slice();
     info!(
         "framebuffer: ptr=0x{:08x} len={}",
         fb.as_ptr() as u32,

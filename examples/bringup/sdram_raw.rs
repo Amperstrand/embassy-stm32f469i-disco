@@ -15,7 +15,7 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     defmt::info!("Starting SDRAM test...");
 
-    let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let mut sdram = SdramCtrl::new(&mut p, 180_000_000);
     let ok = sdram.test_quick();
     defmt::info!("SDRAM test: {}", ok);
 
