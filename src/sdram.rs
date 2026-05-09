@@ -40,6 +40,9 @@ unsafe impl FmcPeripheral for EmbassyFmc {
 fn sdram_pin(pin: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>) {
     let mut flex = Flex::new(pin);
     flex.set_as_af_unchecked(12, FMC_AF12);
+    // SAFETY: `flex` must not be dropped — dropping it would reconfigure the pin
+    // back to floating input, breaking the FMC bus. The pin is intentionally
+    // leaked here; the hardware owns it for the lifetime of the SDRAM controller.
     core::mem::forget(flex);
 }
 
@@ -54,6 +57,11 @@ pub struct SdramCtrl {
 impl SdramCtrl {
     /// Configure FMC pins and initialize external SDRAM.
     pub fn new(p: &mut embassy_stm32::Peripherals, source_clock_hz: u32) -> Self {
+        // SAFETY: Each pin is cloned once and immediately consumed by `sdram_pin`,
+        // which configures it as AF12 and leaks the `Flex` handle. The `Peripherals`
+        // struct is `&mut`, so no other code holds a reference to these pins.
+        // `clone_unchecked` is required because `stm32-fmc` takes ownership of the
+        // FMC peripheral separately, preventing us from using the type-safe pin API.
         sdram_pin(unsafe { p.PF0.clone_unchecked() });
         sdram_pin(unsafe { p.PF1.clone_unchecked() });
         sdram_pin(unsafe { p.PF2.clone_unchecked() });
