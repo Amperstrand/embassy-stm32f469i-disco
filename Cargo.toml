@@ -29,7 +29,6 @@ cortex-m = "0.7"
 defmt = { version = "1.0", optional = true }
 embedded-hal = "1.0"
 embedded-hal-02 = { package = "embedded-hal", version = "0.2.7", optional = true }
-embedded-test-linker-script = "0.1.0"
 
 # Display dependencies
 stm32-fmc = { version = "0.4.0", features = ["sdram"], optional = true }
@@ -40,6 +39,7 @@ embedded-graphics = { version = "0.8", optional = true }
 stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 
 [dev-dependencies]
+embedded-test-linker-script = "0.1.0"
 embedded-test = { version = "0.7.1", features = ["embassy-010"] }
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread", "embassy-time-driver"] }
 embassy-usb = { version = "0.6.0" }
@@ -64,38 +64,47 @@ test = false
 
 [[example]]
 name = "board_blinky"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "board_display"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "board_touch"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "display_hybrid"
+required-features = ["display"]
 test = false
 
 [[example]]
 name = "display_touch"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "display_touch_rgb565"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "extensive_hw_test"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "hw_diag"
+required-features = ["display", "touch"]
 test = false
 
 [[example]]
 name = "test_display_interactive"
+required-features = ["display"]
 test = false
 
 [[example]]
