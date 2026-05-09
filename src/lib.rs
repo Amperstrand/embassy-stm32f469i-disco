@@ -51,6 +51,9 @@ pub mod display;
 pub mod touch;
 
 #[cfg(all(feature = "display", feature = "touch"))]
+mod bist;
+
+#[cfg(all(feature = "display", feature = "touch"))]
 mod board;
 
 #[cfg(feature = "display")]
@@ -70,6 +73,9 @@ pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 
 #[cfg(feature = "touch")]
 pub use touch::{EdgeFilter, TouchCtrl, TouchError, TouchPoint};
+
+#[cfg(all(feature = "display", feature = "touch"))]
+pub use bist::{BootTestResults, TestResult};
 
 #[cfg(all(feature = "display", feature = "touch"))]
 pub use board::{Board, BoardInitError, Leds, SdramRemainders, UserButton};

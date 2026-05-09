@@ -11,7 +11,8 @@ use embassy_stm32::usart::Uart;
 use embassy_stm32::Peripherals;
 use embassy_stm32f469i_disco::touch::{EdgeFilter, TouchPoint};
 use embassy_stm32f469i_disco::{
-    config_180, Board, BoardHint, FramebufferView, FB_HEIGHT, FB_WIDTH, SDRAM_SIZE_BYTES,
+    config_180, Board, BoardHint, BootTestResults, FramebufferView, FB_HEIGHT, FB_WIDTH,
+    SDRAM_SIZE_BYTES,
 };
 use embassy_time::{Duration, Instant, Timer};
 use embedded_graphics::{
@@ -1241,6 +1242,7 @@ async fn main(_spawner: Spawner) {
         leds,
         user_button,
         sdram_remainders,
+        test_results: _,
     } = board;
     let mut board = Board {
         display,
@@ -1248,6 +1250,7 @@ async fn main(_spawner: Spawner) {
         leds,
         user_button,
         sdram_remainders,
+        test_results: BootTestResults::default(),
     };
     phase2_sdram_and_display(&mut board).await;
     phase3_visual_tests(&mut board).await;

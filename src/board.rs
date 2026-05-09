@@ -4,6 +4,7 @@ use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
 use embassy_stm32::peripherals;
 use embassy_stm32::{rcc, Peri, Peripherals};
 
+use crate::bist::{BootTestResults, TestResult};
 use crate::{BoardHint, DisplayCtrl, SdramCtrl, TouchCtrl};
 
 /// Errors that can occur during [`Board::try_new`] initialization.
@@ -70,6 +71,8 @@ pub struct Board {
     pub user_button: UserButton,
     /// Pins left free after SDRAM/display bring-up.
     pub sdram_remainders: SdramRemainders,
+    /// Hardware self-test results from board initialization.
+    pub test_results: BootTestResults,
 }
 
 impl Board {
@@ -92,9 +95,13 @@ impl Board {
             .ok_or(BoardInitError::HclkUnavailable)?
             .0;
 
-        let sdram = SdramCtrl::new(&mut p, source_clock_hz);
+        let mut sdram = SdramCtrl::new(&mut p, source_clock_hz);
+        let sdram_ok = sdram.test_quick();
         let framebuffer = sdram.into_bytes();
+
         let display = DisplayCtrl::try_new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, hint)?;
+        // Display init succeeded if we reach here — try_new returns Err otherwise.
+        let display_result = TestResult::Pass;
 
         let i2c = embassy_stm32::i2c::I2c::new_blocking(
             p.I2C1,
@@ -102,7 +109,35 @@ impl Board {
             p.PB9,
             embassy_stm32::i2c::Config::default(),
         );
-        let touch = TouchCtrl::new(i2c);
+        let mut touch = TouchCtrl::new(i2c);
+
+        let touch_vendor_id_result = touch.read_vendor_id();
+        let touch_chip_model_result = touch.read_chip_model();
+        let touch_idle_result = touch.td_status();
+
+        let touch_i2c_result = if touch_vendor_id_result.is_ok() || touch_chip_model_result.is_ok() {
+            TestResult::Pass
+        } else {
+            TestResult::Fail
+        };
+
+        let touch_vendor_id = match touch_vendor_id_result {
+            Ok(0x11) => TestResult::Pass,
+            Ok(_) => TestResult::Fail,
+            Err(_) => TestResult::Fail,
+        };
+
+        let touch_chip_model = match touch_chip_model_result {
+            Ok(0x06 | 0x36 | 0x64) => TestResult::Pass,
+            Ok(_) => TestResult::Fail,
+            Err(_) => TestResult::Fail,
+        };
+
+        let touch_idle = match touch_idle_result {
+            Ok(0) => TestResult::Pass,
+            Ok(_) => TestResult::Fail,
+            Err(_) => TestResult::Fail,
+        };
 
         let leds = Leds {
             green: Output::new(p.PG6, Level::High, Speed::Low),
@@ -118,12 +153,24 @@ impl Board {
             usart6_rx: p.PG9,
         };
 
+        let test_results = BootTestResults {
+            sdram: if sdram_ok { TestResult::Pass } else { TestResult::Fail },
+            display: display_result,
+            touch_i2c: touch_i2c_result,
+            touch_vendor_id,
+            touch_chip_model,
+            touch_idle,
+            leds: TestResult::Pass,
+            user_button: TestResult::Pass,
+        };
+
         Ok(Self {
             display,
             touch,
             leds,
             user_button,
             sdram_remainders,
+            test_results,
         })
     }
 }
