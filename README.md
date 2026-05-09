@@ -138,7 +138,12 @@ embassy_stm32f469i_disco::reset_usb_phy();
 let driver = embassy_stm32::usb::Driver::new_fs(
     p.USB_OTG_FS, Irqs, p.PA12, p.PA11, ep_out_buffer, usb_config,
 );
+
+// Write CDC responses with automatic ZLP handling
+embassy_stm32f469i_disco::send_with_zlp(&mut class, &buf[..n]).await.unwrap();
 ```
+
+[`send_with_zlp`] chunks data into max-packet-size writes and appends a zero-length packet when the total length is an exact multiple of `max_packet_size`. Use it for any CDC write where the payload may land on a packet boundary (e.g. echo responses, protocol messages). Plain `write_packet` is sufficient for continuous streaming.
 
 > **Important:** Use `st-flash` for USB firmware deployment. Do not use `probe-rs run` during USB testing, as the debug probe interferes with USB enumeration.
 
@@ -165,6 +170,8 @@ See `examples/async_cdc_minimal.rs` for a complete USB CDC example.
 | `config_168()` | fn | 168 MHz PLL config |
 | `config_usb_only()` | fn | 168 MHz, USB without display |
 | `reset_usb_phy()` | fn | Reset USB OTG FS PHY for clean re-enumeration |
+| `send_with_zlp()` | fn | CDC write with automatic zero-length packet on packet-boundary payloads |
+| `CdcAcmWriter` | trait | Abstraction over `CdcAcmClass` / `Sender` for `send_with_zlp` |
 | `SYSCLK_HZ_180` | const | 180_000_000 |
 | `SYSCLK_HZ_168` | const | 168_000_000 |
 | `FB_HEIGHT` | const | 800 |

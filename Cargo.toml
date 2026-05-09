@@ -25,6 +25,7 @@ bringup = []
 [dependencies]
 embassy-stm32 = { version = "0.6.0", features = ["stm32f469ni", "time-driver-any", "exti"] }
 embassy-time = { version = "0.5.1" }
+embassy-usb = { version = "0.6.0" }
 cortex-m = "0.7"
 defmt = { version = "1.0", optional = true }
 embedded-hal = "1.0"
@@ -42,7 +43,6 @@ stm32-metapac = { version = "21", default-features = false, features = ["stm32f4
 embedded-test-linker-script = "0.1.0"
 embedded-test = { version = "0.7.1", features = ["embassy-010"] }
 embassy-executor = { version = "0.10.0", features = ["platform-cortex-m", "executor-thread", "embassy-time-driver"] }
-embassy-usb = { version = "0.6.0" }
 embassy-futures = { version = "0.1.2" }
 embassy-sync = { version = "0.8.0" }
 defmt = "1.0"

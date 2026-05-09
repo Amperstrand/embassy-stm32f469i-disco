@@ -25,7 +25,7 @@ pub mod clock;
 pub mod usb;
 
 pub use clock::{config_168, config_180, config_usb_only, SYSCLK_HZ_168, SYSCLK_HZ_180};
-pub use usb::reset_usb_phy;
+pub use usb::{reset_usb_phy, send_with_zlp, CdcAcmWriter};
 
 #[cfg(feature = "display")]
 mod sdram;

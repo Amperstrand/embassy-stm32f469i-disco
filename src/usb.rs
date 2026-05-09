@@ -1,4 +1,4 @@
-//! USB OTG FS PHY reset utilities for STM32F469I-Discovery.
+//! USB helpers for STM32F469I-Discovery.
 //!
 //! # USB PHY Reset
 //!
@@ -7,30 +7,129 @@
 //! Cycling the RCC clock, asserting peripheral reset, performing a core soft reset,
 //! and power-cycling the PHY ensures a clean start.
 //!
-//! Call this function **before** creating the USB driver with
+//! Call [`reset_usb_phy()`] **before** creating the USB driver with
 //! `embassy_stm32::usb::Driver::new_fs()`.
+//!
+//! # Zero-Length Packet (ZLP) Helper
+//!
+//! USB bulk transfers use max-packet-size chunks. The host cannot distinguish
+//! "end of transfer" from "more data coming" when the final packet is exactly
+//! `max_packet_size` bytes — it will wait for another packet. Sending a
+//! zero-length packet (ZLP) signals that the transfer is complete.
+//!
+//! [`send_with_zlp`] writes `data` in packet-sized chunks and automatically
+//! appends a ZLP when the total length is a non-empty exact multiple of
+//! `max_packet_size`.
+//!
+//! **When to use [`send_with_zlp`]:**
+//! - CDC echo responses where the payload length is variable
+//! - Protocol messages with known length (e.g. `"OK\r\n"` = 4 bytes)
+//! - Any write where the payload size may equal a packet boundary
+//!
+//! **When [`CdcAcmWriter::write_packet`] alone is sufficient:**
+//! - Continuous streaming where the host reads greedily (e.g. log output)
+//! - Payloads guaranteed to be shorter than `max_packet_size`
 //!
 //! # Example
 //!
 //! ```rust,ignore
-//! // Reset USB PHY before creating driver
-//! embassy_stm32f469i_disco::usb::reset_usb_phy();
+//! use embassy_stm32f469i_disco::{reset_usb_phy, send_with_zlp};
 //!
-//! // Now create USB driver
-//! let driver = embassy_stm32::usb::Driver::new_fs(
-//!     p.USB_OTG_FS,
-//!     Irqs,
-//!     p.PA12,
-//!     p.PA11,
-//!     ep_out_buffer,
-//!     usb_config,
-//! );
+//! // Reset USB PHY before creating driver
+//! reset_usb_phy();
+//!
+//! // ... create CdcAcmClass ...
+//!
+//! // Echo with automatic ZLP handling
+//! send_with_zlp(&mut class, &rx_buf[..n]).await.unwrap();
 //! ```
 //!
 //! # References
 //!
 //! - micronuts#34, microfips#105, gm65-scanner#56 — USB PHY reset after st-flash
-//! - ccid-firmware-rs#15 — Original issue report
+//! - USB 2.0 spec §5.8.3 — Bulk transfer termination with short packet
+
+use embassy_usb::driver::{Driver, EndpointError};
+
+/// Trait for USB CDC ACM packet writers.
+///
+/// Implemented for [`embassy_usb::class::cdc_acm::CdcAcmClass`] and
+/// [`embassy_usb::class::cdc_acm::Sender`]. Use [`send_with_zlp`] with any
+/// type implementing this trait.
+///
+/// # Implementors
+///
+/// | Type | Notes |
+/// |------|-------|
+/// | `CdcAcmClass<'_, D>` | Full CDC ACM class (read + write) |
+/// | `Sender<'_, D>` | Split sender from `CdcAcmClass::split()` |
+#[allow(async_fn_in_trait)]
+pub trait CdcAcmWriter {
+    /// Error type returned by write operations.
+    type Error;
+
+    /// Maximum packet size for the bulk IN endpoint (typically 64 for full-speed).
+    fn max_packet_size(&self) -> u16;
+
+    /// Write a single packet. `data` must be ≤ `max_packet_size()`.
+    async fn write_packet(&mut self, data: &[u8]) -> Result<(), Self::Error>;
+}
+
+impl<'d, D: Driver<'d>> CdcAcmWriter for embassy_usb::class::cdc_acm::CdcAcmClass<'d, D> {
+    type Error = EndpointError;
+
+    fn max_packet_size(&self) -> u16 {
+        embassy_usb::class::cdc_acm::CdcAcmClass::max_packet_size(self)
+    }
+
+    async fn write_packet(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        embassy_usb::class::cdc_acm::CdcAcmClass::write_packet(self, data).await
+    }
+}
+
+impl<'d, D: Driver<'d>> CdcAcmWriter for embassy_usb::class::cdc_acm::Sender<'d, D> {
+    type Error = EndpointError;
+
+    fn max_packet_size(&self) -> u16 {
+        embassy_usb::class::cdc_acm::Sender::max_packet_size(self)
+    }
+
+    async fn write_packet(&mut self, data: &[u8]) -> Result<(), Self::Error> {
+        embassy_usb::class::cdc_acm::Sender::write_packet(self, data).await
+    }
+}
+
+/// Write `data` via a CDC ACM writer, sending a zero-length packet when needed.
+///
+/// Splits `data` into [`CdcAcmWriter::max_packet_size()`]-byte chunks and writes
+/// each chunk. If `data` is non-empty and its length is an exact multiple of the
+/// max packet size, an additional zero-length packet (ZLP) is sent so the host
+/// processes the transfer immediately rather than waiting for more data.
+///
+/// # Errors
+///
+/// Returns the writer's error type (typically [`EndpointError::Disabled`] if
+/// the USB device is not connected).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// send_with_zlp(&mut class, &rx_buf[..n]).await?;
+/// send_with_zlp(&mut sender, b"OK\r\n").await?;
+/// ```
+pub async fn send_with_zlp<W: CdcAcmWriter>(writer: &mut W, data: &[u8]) -> Result<(), W::Error> {
+    let max = writer.max_packet_size() as usize;
+    let mut offset = 0;
+    while offset < data.len() {
+        let end = (offset + max).min(data.len());
+        writer.write_packet(&data[offset..end]).await?;
+        offset = end;
+    }
+    if !data.is_empty() && data.len().is_multiple_of(max) {
+        writer.write_packet(&[]).await?;
+    }
+    Ok(())
+}
 
 /// Resets the USB OTG FS peripheral and PHY for clean re-enumeration.
 ///

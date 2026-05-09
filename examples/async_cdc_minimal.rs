@@ -26,7 +26,7 @@ use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::Builder;
 
-use embassy_stm32f469i_disco::{config_168, display::SdramCtrl, SYSCLK_HZ_168};
+use embassy_stm32f469i_disco::{config_168, display::SdramCtrl, send_with_zlp, SYSCLK_HZ_168};
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -129,13 +129,13 @@ async fn main(_spawner: Spawner) {
                         tx[4] = b':';
                         let copy_len = n.min(254);
                         tx[5..copy_len + 5].copy_from_slice(&rx_buf[..copy_len]);
-                        if cdc.write_packet(&tx[..copy_len + 5]).await.is_err() {
+                        if send_with_zlp(&mut cdc, &tx[..copy_len + 5]).await.is_err() {
                             break;
                         }
                     }
                     Ok(_) => {
                         heartbeat.next().await;
-                        if cdc.write_packet(b"ALIVE\n").await.is_err() {
+                        if send_with_zlp(&mut cdc, b"ALIVE\n").await.is_err() {
                             break;
                         }
                     }

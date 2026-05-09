@@ -7,7 +7,7 @@ use embassy_stm32::bind_interrupts;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::peripherals;
 use embassy_stm32::usb;
-use embassy_stm32f469i_disco::config_usb_only;
+use embassy_stm32f469i_disco::{config_usb_only, send_with_zlp};
 use embassy_time::{Duration, Ticker};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::driver::EndpointError;
@@ -76,7 +76,7 @@ async fn main(_spawner: Spawner) {
             {
                 embassy_futures::select::Either::First(result) => match result {
                     Ok(n) => {
-                        let _ = class.write_packet(&rx_buf[..n]).await;
+                        let _ = send_with_zlp(&mut class, &rx_buf[..n]).await;
                     }
                     Err(EndpointError::BufferOverflow) => {}
                     Err(EndpointError::Disabled) => {
