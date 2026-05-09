@@ -34,14 +34,14 @@ probe-rs run --chip STM32F469NIHx --target thumbv7em-none-eabihf --example board
 
 ## Board API
 
-`Board::new()` initializes SDRAM, display, touch controller, LEDs, and the user button in a single call:
+`Board::try_new()` initializes SDRAM, display, touch controller, LEDs, and the user button in a single call:
 
 ```rust
 use embassy_stm32f469i_disco::{Board, BoardHint};
 use embedded_graphics::pixelcolor::Rgb888;
 
 let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
-let mut board = Board::new(p, BoardHint::ForceNt35510);
+let mut board = Board::try_new(p, BoardHint::ForceNt35510).expect("board init");
 
 // Access display framebuffer
 let mut fb = board.display.fb();
