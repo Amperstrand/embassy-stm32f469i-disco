@@ -6,6 +6,24 @@ use embassy_stm32::{rcc, Peri, Peripherals};
 
 use crate::{BoardHint, DisplayCtrl, SdramCtrl, TouchCtrl};
 
+/// Errors that can occur during [`Board::try_new`] initialization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+#[non_exhaustive]
+pub enum BoardInitError {
+    /// HCLK frequency could not be determined from the RCC clock tree.
+    /// This should never happen after a valid `config_180()` / `config_168()` call.
+    HclkUnavailable,
+    /// Display initialization failed.
+    Display(crate::DisplayInitError),
+}
+
+impl From<crate::DisplayInitError> for BoardInitError {
+    fn from(e: crate::DisplayInitError) -> Self {
+        BoardInitError::Display(e)
+    }
+}
+
 /// User LEDs on the STM32F469I-Discovery board.
 ///
 /// LEDs are active-low: drive low to turn on, high to turn off.
@@ -38,7 +56,7 @@ pub struct SdramRemainders {
 /// use embassy_stm32f469i_disco::{Board, BoardHint};
 ///
 /// let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
-/// let board = Board::new(p, BoardHint::Auto);
+/// let board = Board::try_new(p, BoardHint::Auto).expect("board init");
 /// let _ = board;
 /// ```
 pub struct Board {
@@ -59,25 +77,24 @@ impl Board {
     ///
     /// Consumes I2C1 (PB8/PB9) for the touch controller.
     ///
-    /// # Panics
+    /// # Errors
     ///
-    /// Panics if the HCLK frequency cannot be determined (should never happen
-    /// after a valid [`config_180()`](crate::config_180) /
-    /// [`config_168()`](crate::config_168) call) or if display initialization
-    /// fails. For a fallible constructor, use the lower-level
-    /// [`SdramCtrl`], [`DisplayCtrl::try_new`], and [`TouchCtrl::new`]
-    /// individually.
-    #[must_use]
-    pub fn new(mut p: Peripherals, hint: BoardHint) -> Self {
+    /// Returns [`BoardInitError::HclkUnavailable`] if the HCLK frequency
+    /// cannot be determined (should never happen after a valid
+    /// [`config_180()`](crate::config_180) /
+    /// [`config_168()`](crate::config_168) call).
+    ///
+    /// Returns [`BoardInitError::Display`] if display initialization fails.
+    pub fn try_new(mut p: Peripherals, hint: BoardHint) -> Result<Self, BoardInitError> {
         let source_clock_hz = rcc::clocks(&p.RCC)
             .hclk1
             .to_hertz()
-            .expect("HCLK unavailable")
+            .ok_or(BoardInitError::HclkUnavailable)?
             .0;
 
         let sdram = SdramCtrl::new(&mut p, source_clock_hz);
         let framebuffer = sdram.into_bytes();
-        let display = DisplayCtrl::new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, hint);
+        let display = DisplayCtrl::try_new(framebuffer, p.LTDC, p.DSIHOST, p.PJ2, p.PH7, hint)?;
 
         let i2c = embassy_stm32::i2c::I2c::new_blocking(
             p.I2C1,
@@ -101,12 +118,12 @@ impl Board {
             usart6_rx: p.PG9,
         };
 
-        Self {
+        Ok(Self {
             display,
             touch,
             leds,
             user_button,
             sdram_remainders,
-        }
+        })
     }
 }

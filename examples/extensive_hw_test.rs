@@ -1246,7 +1246,7 @@ async fn main(_spawner: Spawner) {
 
     phase1_raw_tests(&peri).await;
 
-    let board = Board::new(p, BoardHint::ForceNt35510);
+    let board = Board::try_new(p, BoardHint::ForceNt35510).expect("board init");
     let Board {
         display,
         touch,

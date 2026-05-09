@@ -18,7 +18,7 @@ use {defmt_rtt as _, panic_probe as _};
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
     let p = embassy_stm32::init(config_180());
-    let mut board = Board::new(p, BoardHint::Auto);
+    let mut board = Board::try_new(p, BoardHint::Auto).expect("board init");
 
     info!("board_blinky: starting LED sequence");
 

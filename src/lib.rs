@@ -72,4 +72,4 @@ pub use sdram::{SdramCtrl, SDRAM_SIZE_BYTES};
 pub use touch::{EdgeFilter, TouchCtrl, TouchError, TouchPoint};
 
 #[cfg(all(feature = "display", feature = "touch"))]
-pub use board::{Board, Leds, SdramRemainders, UserButton};
+pub use board::{Board, BoardInitError, Leds, SdramRemainders, UserButton};
