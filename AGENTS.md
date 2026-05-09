@@ -159,6 +159,7 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 
 | Commit | Branch | Notes |
 |--------|--------|-------|
+| `40f17e5` | `main` | BSP production pass complete: Board::try_new, EdgeFilter::default, DsiTimeout split, SDRAM soundness, example hygiene. All code changes done; HIL pending. |
 | `4278bbd` | `main` | All examples migrated to clock presets, DsiHostCtrlIo casing fix |
 | `57c20e3` | `main` | docs: known-good pins, clock config adoption status. **Current HEAD** |
 | `07e09cd` | `main` | hw_diag RNG/Timer/DMA fixes (pending HW verification, issue #29) |
@@ -333,6 +334,16 @@ let driver = embassy_stm32::usb::Driver::new_fs(
 
 **Affected:** micronuts#34, microfips#105, gm65-scanner#56 — all three projects independently discovered this issue.
 **Reference:** `src/usb.rs` module in this BSP
+
+### Deferred Work (Post-Production-Pass)
+
+The following items were identified during the production pass but deferred to keep scope manageable:
+
+1. **nt35510 crates.io publish** — postponed pending hardware re-test. BSP currently pins `nt35510` via git rev. Publish after HIL confirms display still works.
+2. **Display flickering investigation** — intermittent flicker reported on some NT35510 panels. Root cause unknown; may be LTDC pixel clock tolerance or DSI lane timing. Needs oscilloscope capture.
+3. **`clone_unchecked` typed helper macro** — the 56 `clone_unchecked` calls in `src/sdram.rs` are documented with SAFETY comments but could be factored into a `sdram_pin!(...)` macro for clarity. Deferred to avoid churn.
+4. **`Board::try_new` HSE-bypass detection** — if HSE is absent (e.g. crystal not populated), `config_180()` will hang. A future `BoardInitError::HseTimeout` variant could surface this. Deferred pending hardware evidence.
+5. **HIL test suite automation** — `run_tests.sh` and `run_usb_tests.sh` work but require manual board attachment. A CI-connected HIL runner would catch regressions automatically.
 
 ## Embassy USB Investigation (embassy-rs/embassy#5738)
 
