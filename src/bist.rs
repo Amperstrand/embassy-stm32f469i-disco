@@ -2,7 +2,7 @@
 //!
 //! Automatically populated by [`Board::try_new`](crate::Board::try_new) during
 //! initialization. Each subsystem test runs inline during board bring-up —
-//! zero extra boot time, zero configuration.
+    //! minimal boot-time overhead, zero configuration.
 //!
 //! # Usage
 //!
