@@ -160,6 +160,24 @@ pub enum DisplayInitError {
     DsiWrite,
     /// Panel initialization sequence failed.
     PanelInit,
+    /// Caller-supplied framebuffer byte slice is too small for the requested resolution.
+    ///
+    /// Returned when the slice length is less than `len_pixels * F::bpp()`.
+    FramebufferTooSmall {
+        /// Actual number of bytes provided by the caller.
+        provided_bytes: usize,
+        /// Minimum number of bytes required for the requested resolution.
+        required_bytes: usize,
+    },
+    /// Caller-supplied framebuffer byte slice is not properly aligned.
+    ///
+    /// Returned when the slice start address is not aligned to `align_of::<F::Pixel>()`.
+    FramebufferMisaligned {
+        /// Actual address of the slice pointer.
+        ptr_addr: usize,
+        /// Required alignment for the pixel type.
+        required_align: usize,
+    },
 }
 
 /// Display orientation (portrait or landscape).
