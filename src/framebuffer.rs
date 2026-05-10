@@ -8,7 +8,9 @@ pub(crate) fn framebuffer_from_bytes<F: DisplayFormat>(
     bytes: &'static mut [u8],
     len_pixels: usize,
 ) -> Result<&'static mut [F::Pixel], DisplayInitError> {
-    let required_bytes = len_pixels * F::bpp();
+    let required_bytes = len_pixels
+        .checked_mul(F::bpp())
+        .ok_or(DisplayInitError::FramebufferSizeOverflow)?;
     if bytes.len() < required_bytes {
         return Err(DisplayInitError::FramebufferTooSmall {
             provided_bytes: bytes.len(),

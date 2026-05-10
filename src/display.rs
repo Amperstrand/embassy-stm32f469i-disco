@@ -178,6 +178,10 @@ pub enum DisplayInitError {
         /// Required alignment for the pixel type.
         required_align: usize,
     },
+    /// Framebuffer size calculation overflowed (`len_pixels * bpp` exceeds `usize::MAX`).
+    ///
+    /// Should never occur with valid display resolutions.
+    FramebufferSizeOverflow,
 }
 
 /// Display orientation (portrait or landscape).
