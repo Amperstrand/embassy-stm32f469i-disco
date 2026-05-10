@@ -25,6 +25,29 @@ USB CDC tests can run at 168 MHz with PLLSAI for display coexistence, or standal
 ./run_usb_tests.sh
 ```
 
+## HIL Test Runner
+
+`run_hil.sh` is a unified hardware-in-the-loop test runner that executes all three test phases in sequence:
+
+| Phase | Method | Tests | Notes |
+|-------|--------|-------|-------|
+| 1 (hil) | `cargo test --test on_target` | 26 embedded-test | probe-rs, per-test device reset |
+| 2 (rtt) | probe-rs flash + RTT capture | 10 example suites | Builds + flashes each example |
+| 3 (usb) | st-flash + serial | 2 USB CDC suites | st-flash required, NOT probe-rs |
+
+```bash
+./run_hil.sh              # run all phases
+./run_hil.sh --skip usb   # skip USB (no board USB needed)
+./run_hil.sh --phase hil  # only embedded-test HIL
+./run_hil.sh --json       # machine-readable JSON output
+./run_hil.sh --list       # list phases and test names
+```
+
+Exit codes: 0 = all pass, 1 = failures, 2 = prerequisites missing.
+Results saved to `hil-results/`. Logs per test in `hil-results/logs_<timestamp>/`.
+
+For CI: use `--json` to get machine-readable output. `--skip usb` avoids the USB serial dependency.
+
 ## CI
 
 GitHub Actions runs on push/PR: build library + all examples (6 feature combos), `cargo fmt`, `cargo clippy -D warnings` (including bringup examples), `cargo doc`, `cargo package`. Zero warnings required.
@@ -69,6 +92,7 @@ tests/
 run_tests.sh                 — probe-rs based runner (all non-USB tests)
 run_usb_tests.sh             — st-flash based runner (USB CDC stress test)
 run_usb_cdc_test.sh          — st-flash based runner (USB CDC connectivity test)
+run_hil.sh                   — unified HIL runner (all phases, JSON output, CI-ready)
 ```
 
 ## Hardware
@@ -344,7 +368,7 @@ The following items were identified during the production pass but deferred to k
 2. **Display flickering investigation** — intermittent flicker reported on some NT35510 panels. Root cause unknown; may be LTDC pixel clock tolerance or DSI lane timing. Needs oscilloscope capture.
 3. **`clone_unchecked` typed helper macro** — resolved: SDRAM now uses embassy type-safe FMC API (`365bdff`), eliminating `clone_unchecked` entirely.
 4. **`Board::try_new` HSE-bypass detection** — if HSE is absent (e.g. crystal not populated), `config_180()` will hang. A future `BoardInitError::HseTimeout` variant could surface this. Deferred pending hardware evidence.
-5. **HIL test suite automation** — `run_tests.sh` and `run_usb_tests.sh` work but require manual board attachment. A CI-connected HIL runner would catch regressions automatically.
+5. **HIL test suite CI integration** — `run_hil.sh` provides a unified runner with JSON output. A self-hosted GitHub Actions runner (Linux box + ST-LINK + board) can gate PRs with `runs-on: self-hosted`. Embassy-rs uses this pattern for MCXA/RP23 HIL tests.
 6. **Board resource split** — `Board::try_new` is intentionally monolithic. Fine-grained `DisplayCtrl::try_new()` / `TouchCtrl::new()` already available for users who don't want full init. A `BoardParts` API is low priority.
 7. **Reset pin ownership** — `DisplayCtrl` intentionally leaks the LCD reset pin via `mem::forget` with SAFETY comment. Storing it would require awkward generic parameter. Low priority.
 
