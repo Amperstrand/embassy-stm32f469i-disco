@@ -2,22 +2,33 @@
 
 use embedded_graphics::{draw_target::DrawTarget, prelude::*, primitives::Rectangle};
 
-use crate::display::{Argb8888, DisplayFormat};
+use crate::display::{Argb8888, DisplayFormat, DisplayInitError};
 
 pub(crate) fn framebuffer_from_bytes<F: DisplayFormat>(
     bytes: &'static mut [u8],
     len_pixels: usize,
-) -> &'static mut [F::Pixel] {
+) -> Result<&'static mut [F::Pixel], DisplayInitError> {
     let required_bytes = len_pixels * F::bpp();
-    assert!(bytes.len() >= required_bytes);
-    assert_eq!(
-        (bytes.as_mut_ptr() as usize) % core::mem::align_of::<F::Pixel>(),
-        0
-    );
+    if bytes.len() < required_bytes {
+        return Err(DisplayInitError::FramebufferTooSmall {
+            provided_bytes: bytes.len(),
+            required_bytes,
+        });
+    }
+    let ptr_addr = bytes.as_mut_ptr() as usize;
+    let required_align = core::mem::align_of::<F::Pixel>();
+    if !ptr_addr.is_multiple_of(required_align) {
+        return Err(DisplayInitError::FramebufferMisaligned {
+            ptr_addr,
+            required_align,
+        });
+    }
 
     // SAFETY: bytes comes from SDRAM (aligned, non-null, exclusive access).
-    // Alignment and length are asserted above.
-    unsafe { &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels) }
+    // Alignment and length are checked above and return Err if violated.
+    Ok(unsafe {
+        &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels)
+    })
 }
 
 /// View over a pixel buffer implementing [`embedded_graphics::draw_target::DrawTarget`].

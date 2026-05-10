@@ -273,7 +273,7 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
         #[cfg(feature = "defmt")]
         defmt::info!("DC::new: dsi init done (not yet enabled)");
 
-        let fb_slice = framebuffer_from_bytes::<F>(framebuffer_bytes, orientation.fb_size());
+        let fb_slice = framebuffer_from_bytes::<F>(framebuffer_bytes, orientation.fb_size())?;
         let fb_addr = fb_slice.as_mut_ptr() as u32;
         configure_ltdc(&mut ltdc, orientation);
 
@@ -286,7 +286,7 @@ impl<'d, F: DisplayFormat> DisplayCtrl<'d, F> {
 
         let controller = match hint {
             BoardHint::ForceOtm8009a => LcdController::Otm8009a,
-            _ => detect_panel(&mut DsiHostAdapter::new(&mut dsi), BoardHint::ForceNt35510),
+            _ => detect_panel(&mut DsiHostAdapter::new(&mut dsi), hint),
         };
 
         #[cfg(feature = "defmt")]
