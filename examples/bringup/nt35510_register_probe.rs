@@ -22,7 +22,6 @@ use core::fmt::Write;
 
 use embassy_executor::Spawner;
 use embassy_stm32::dsihost;
-use embassy_stm32f469i_disco::display::SdramCtrl;
 use embassy_stm32f469i_disco::{config_180, BoardHint, DisplayCtrl, TouchCtrl, TouchPoint};
 use embassy_time::{block_for, Duration, Timer};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};

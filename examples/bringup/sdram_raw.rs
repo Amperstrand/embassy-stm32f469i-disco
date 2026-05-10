@@ -6,7 +6,6 @@ extern crate defmt_rtt;
 extern crate panic_probe;
 
 use embassy_stm32::Config;
-use embassy_stm32f469i_disco::display::SdramCtrl;
 use embassy_time::Timer;
 
 #[embassy_executor::main]

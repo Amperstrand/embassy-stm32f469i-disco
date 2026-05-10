@@ -51,7 +51,6 @@ panic-probe = { version = "1.0", features = ["print-defmt"] }
 embedded-graphics = "0.8"
 cortex-m-rt = "0.7"
 cortex-m = { version = "0.7", features = ["critical-section-single-core"] }
-stm32-metapac = { version = "21", default-features = false, features = ["stm32f469ni"] }
 embedded-io = "0.7"
 panic-halt = "1.0"
 heapless = "0.8"
