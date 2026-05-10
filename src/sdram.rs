@@ -1,13 +1,16 @@
-//! SDRAM controller and FMC pin configuration for the STM32F469I-Discovery.
+//! SDRAM controller for the STM32F469I-Discovery board.
+//!
+//! Uses embassy-stm32's type-safe FMC API to configure the IS42S32400F-6BL SDRAM
+//! on Bank 1 (0xC000_0000, 16 MiB, 32-bit data bus). All FMC pins are configured
+//! by the embassy FMC driver — no manual `unsafe` pin setup required.
 
-use embassy_stm32::gpio::{AfType, Flex, OutputType, Pull, Speed};
-use embassy_stm32::rcc;
+use embassy_stm32::fmc::Fmc;
+use embassy_stm32::peripherals;
+use embassy_stm32::Peri;
 use embassy_time::{block_for, Duration};
 use embedded_hal::delay::DelayNs;
 use stm32_fmc::devices::is42s32400f_6::Is42s32400f6;
-use stm32_fmc::{FmcPeripheral, Sdram, SdramTargetBank};
-
-const FMC_AF12: AfType = AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up);
+use stm32_fmc::Sdram;
 
 struct BusyDelay;
 
@@ -17,113 +20,170 @@ impl DelayNs for BusyDelay {
     }
 }
 
-struct EmbassyFmc {
-    source_clock: u32,
-}
-
-// SAFETY: EmbassyFmc is only used from SdramCtrl::new() which takes &mut Peripherals,
-// ensuring exclusive access. The FMC register block is a single hardware resource.
-unsafe impl Send for EmbassyFmc {}
-// SAFETY: REGISTERS points to the FMC peripheral at 0xA000_0000, fixed by STM32F469 silicon.
-unsafe impl FmcPeripheral for EmbassyFmc {
-    const REGISTERS: *const () = 0xa000_0000 as *const ();
-
-    fn enable(&mut self) {
-        rcc::enable_and_reset::<embassy_stm32::peripherals::FMC>();
-    }
-
-    fn source_clock_hz(&self) -> u32 {
-        self.source_clock
-    }
-}
-
-fn sdram_pin(pin: embassy_stm32::Peri<'_, impl embassy_stm32::gpio::Pin>) {
-    let mut flex = Flex::new(pin);
-    flex.set_as_af_unchecked(12, FMC_AF12);
-    // SAFETY: `flex` must not be dropped — dropping it would reconfigure the pin
-    // back to floating input, breaking the FMC bus. The pin is intentionally
-    // leaked here; the hardware owns it for the lifetime of the SDRAM controller.
-    core::mem::forget(flex);
+/// Initialize SDRAM using the STM32F469I-Discovery board pin mapping.
+///
+/// Extracts all FMC pins from `Peripherals` and passes them to [`SdramCtrl::new`].
+/// Use this in examples and tests instead of calling [`SdramCtrl::new`] directly.
+#[macro_export]
+macro_rules! sdram_init {
+    ($p:ident) => {{
+        $crate::SdramCtrl::new(
+            $p.FMC, // Address (A0–A11)
+            $p.PF0, $p.PF1, $p.PF2, $p.PF3, $p.PF4, $p.PF5, $p.PF12, $p.PF13, $p.PF14, $p.PF15,
+            $p.PG0, $p.PG1, // Bank address (BA0, BA1)
+            $p.PG4, $p.PG5, // Data (D0–D31)
+            $p.PD14, $p.PD15, $p.PD0, $p.PD1, $p.PE7, $p.PE8, $p.PE9, $p.PE10, $p.PE11, $p.PE12,
+            $p.PE13, $p.PE14, $p.PE15, $p.PD8, $p.PD9, $p.PD10, $p.PH8, $p.PH9, $p.PH10, $p.PH11,
+            $p.PH12, $p.PH13, $p.PH14, $p.PH15, $p.PI0, $p.PI1, $p.PI2, $p.PI3, $p.PI6, $p.PI7,
+            $p.PI9, $p.PI10, // Byte lane (NBL0–NBL3)
+            $p.PE0, $p.PE1, $p.PI4, $p.PI5,
+            // Control (SDCKE0, SDCLK, SDNCAS, SDNE0, SDNRAS, SDNWE)
+            $p.PH2, $p.PG8, $p.PG15, $p.PH3, $p.PF11, $p.PC0,
+        )
+    }};
 }
 
 /// Total external SDRAM capacity in bytes.
 pub const SDRAM_SIZE_BYTES: usize = 16 * 1024 * 1024;
 
 /// FMC SDRAM controller for the IS42S32400F-6BL device.
+///
+/// The SDRAM is initialized on Bank 1 at 0xC000_0000 with 12-bit address,
+/// 32-bit data bus, 4 internal banks.
 pub struct SdramCtrl {
     mem: *mut u32,
 }
 
 impl SdramCtrl {
     /// Configure FMC pins and initialize external SDRAM.
-    pub fn new(p: &mut embassy_stm32::Peripherals, source_clock_hz: u32) -> Self {
-        // SAFETY: Each pin is cloned once and immediately consumed by `sdram_pin`,
-        // which configures it as AF12 and leaks the `Flex` handle. The `Peripherals`
-        // struct is `&mut`, so no other code holds a reference to these pins.
-        // `clone_unchecked` is required because `stm32-fmc` takes ownership of the
-        // FMC peripheral separately, preventing us from using the type-safe pin API.
-        sdram_pin(unsafe { p.PF0.clone_unchecked() });
-        sdram_pin(unsafe { p.PF1.clone_unchecked() });
-        sdram_pin(unsafe { p.PF2.clone_unchecked() });
-        sdram_pin(unsafe { p.PF3.clone_unchecked() });
-        sdram_pin(unsafe { p.PF4.clone_unchecked() });
-        sdram_pin(unsafe { p.PF5.clone_unchecked() });
-        sdram_pin(unsafe { p.PF11.clone_unchecked() });
-        sdram_pin(unsafe { p.PF12.clone_unchecked() });
-        sdram_pin(unsafe { p.PF13.clone_unchecked() });
-        sdram_pin(unsafe { p.PF14.clone_unchecked() });
-        sdram_pin(unsafe { p.PF15.clone_unchecked() });
-        sdram_pin(unsafe { p.PG0.clone_unchecked() });
-        sdram_pin(unsafe { p.PG1.clone_unchecked() });
-        sdram_pin(unsafe { p.PG4.clone_unchecked() });
-        sdram_pin(unsafe { p.PG5.clone_unchecked() });
-        sdram_pin(unsafe { p.PG8.clone_unchecked() });
-        sdram_pin(unsafe { p.PG15.clone_unchecked() });
-        sdram_pin(unsafe { p.PD0.clone_unchecked() });
-        sdram_pin(unsafe { p.PD1.clone_unchecked() });
-        sdram_pin(unsafe { p.PD8.clone_unchecked() });
-        sdram_pin(unsafe { p.PD9.clone_unchecked() });
-        sdram_pin(unsafe { p.PD10.clone_unchecked() });
-        sdram_pin(unsafe { p.PD14.clone_unchecked() });
-        sdram_pin(unsafe { p.PD15.clone_unchecked() });
-        sdram_pin(unsafe { p.PE0.clone_unchecked() });
-        sdram_pin(unsafe { p.PE1.clone_unchecked() });
-        sdram_pin(unsafe { p.PE7.clone_unchecked() });
-        sdram_pin(unsafe { p.PE8.clone_unchecked() });
-        sdram_pin(unsafe { p.PE9.clone_unchecked() });
-        sdram_pin(unsafe { p.PE10.clone_unchecked() });
-        sdram_pin(unsafe { p.PE11.clone_unchecked() });
-        sdram_pin(unsafe { p.PE12.clone_unchecked() });
-        sdram_pin(unsafe { p.PE13.clone_unchecked() });
-        sdram_pin(unsafe { p.PE14.clone_unchecked() });
-        sdram_pin(unsafe { p.PE15.clone_unchecked() });
-        sdram_pin(unsafe { p.PH2.clone_unchecked() });
-        sdram_pin(unsafe { p.PH3.clone_unchecked() });
-        sdram_pin(unsafe { p.PH8.clone_unchecked() });
-        sdram_pin(unsafe { p.PH9.clone_unchecked() });
-        sdram_pin(unsafe { p.PH10.clone_unchecked() });
-        sdram_pin(unsafe { p.PH11.clone_unchecked() });
-        sdram_pin(unsafe { p.PH12.clone_unchecked() });
-        sdram_pin(unsafe { p.PH13.clone_unchecked() });
-        sdram_pin(unsafe { p.PH14.clone_unchecked() });
-        sdram_pin(unsafe { p.PH15.clone_unchecked() });
-        sdram_pin(unsafe { p.PI0.clone_unchecked() });
-        sdram_pin(unsafe { p.PI1.clone_unchecked() });
-        sdram_pin(unsafe { p.PI2.clone_unchecked() });
-        sdram_pin(unsafe { p.PI3.clone_unchecked() });
-        sdram_pin(unsafe { p.PI4.clone_unchecked() });
-        sdram_pin(unsafe { p.PI5.clone_unchecked() });
-        sdram_pin(unsafe { p.PI6.clone_unchecked() });
-        sdram_pin(unsafe { p.PI7.clone_unchecked() });
-        sdram_pin(unsafe { p.PI9.clone_unchecked() });
-        sdram_pin(unsafe { p.PI10.clone_unchecked() });
-        sdram_pin(unsafe { p.PC0.clone_unchecked() });
-
-        let fmc = EmbassyFmc {
-            source_clock: source_clock_hz,
-        };
-        let mut sdram: Sdram<EmbassyFmc, Is42s32400f6> =
-            Sdram::new_unchecked(fmc, SdramTargetBank::Bank1, Is42s32400f6 {});
+    ///
+    /// Takes ownership of the FMC peripheral and all required pins.
+    /// Embassy's type-safe FMC driver configures each pin to AF12 (PushPull, VeryHigh, PullUp)
+    /// inside a critical section.
+    ///
+    /// The pin types enforce compile-time correctness: only pins that implement
+    /// the correct FMC trait for this chip (STM32F469NI) are accepted.
+    #[expect(clippy::too_many_arguments, reason = "matches embassy FMC constructor")]
+    pub fn new(
+        fmc: Peri<'_, peripherals::FMC>,
+        a0: Peri<'_, impl embassy_stm32::fmc::A0Pin<peripherals::FMC>>,
+        a1: Peri<'_, impl embassy_stm32::fmc::A1Pin<peripherals::FMC>>,
+        a2: Peri<'_, impl embassy_stm32::fmc::A2Pin<peripherals::FMC>>,
+        a3: Peri<'_, impl embassy_stm32::fmc::A3Pin<peripherals::FMC>>,
+        a4: Peri<'_, impl embassy_stm32::fmc::A4Pin<peripherals::FMC>>,
+        a5: Peri<'_, impl embassy_stm32::fmc::A5Pin<peripherals::FMC>>,
+        a6: Peri<'_, impl embassy_stm32::fmc::A6Pin<peripherals::FMC>>,
+        a7: Peri<'_, impl embassy_stm32::fmc::A7Pin<peripherals::FMC>>,
+        a8: Peri<'_, impl embassy_stm32::fmc::A8Pin<peripherals::FMC>>,
+        a9: Peri<'_, impl embassy_stm32::fmc::A9Pin<peripherals::FMC>>,
+        a10: Peri<'_, impl embassy_stm32::fmc::A10Pin<peripherals::FMC>>,
+        a11: Peri<'_, impl embassy_stm32::fmc::A11Pin<peripherals::FMC>>,
+        ba0: Peri<'_, impl embassy_stm32::fmc::BA0Pin<peripherals::FMC>>,
+        ba1: Peri<'_, impl embassy_stm32::fmc::BA1Pin<peripherals::FMC>>,
+        d0: Peri<'_, impl embassy_stm32::fmc::D0Pin<peripherals::FMC>>,
+        d1: Peri<'_, impl embassy_stm32::fmc::D1Pin<peripherals::FMC>>,
+        d2: Peri<'_, impl embassy_stm32::fmc::D2Pin<peripherals::FMC>>,
+        d3: Peri<'_, impl embassy_stm32::fmc::D3Pin<peripherals::FMC>>,
+        d4: Peri<'_, impl embassy_stm32::fmc::D4Pin<peripherals::FMC>>,
+        d5: Peri<'_, impl embassy_stm32::fmc::D5Pin<peripherals::FMC>>,
+        d6: Peri<'_, impl embassy_stm32::fmc::D6Pin<peripherals::FMC>>,
+        d7: Peri<'_, impl embassy_stm32::fmc::D7Pin<peripherals::FMC>>,
+        d8: Peri<'_, impl embassy_stm32::fmc::D8Pin<peripherals::FMC>>,
+        d9: Peri<'_, impl embassy_stm32::fmc::D9Pin<peripherals::FMC>>,
+        d10: Peri<'_, impl embassy_stm32::fmc::D10Pin<peripherals::FMC>>,
+        d11: Peri<'_, impl embassy_stm32::fmc::D11Pin<peripherals::FMC>>,
+        d12: Peri<'_, impl embassy_stm32::fmc::D12Pin<peripherals::FMC>>,
+        d13: Peri<'_, impl embassy_stm32::fmc::D13Pin<peripherals::FMC>>,
+        d14: Peri<'_, impl embassy_stm32::fmc::D14Pin<peripherals::FMC>>,
+        d15: Peri<'_, impl embassy_stm32::fmc::D15Pin<peripherals::FMC>>,
+        d16: Peri<'_, impl embassy_stm32::fmc::D16Pin<peripherals::FMC>>,
+        d17: Peri<'_, impl embassy_stm32::fmc::D17Pin<peripherals::FMC>>,
+        d18: Peri<'_, impl embassy_stm32::fmc::D18Pin<peripherals::FMC>>,
+        d19: Peri<'_, impl embassy_stm32::fmc::D19Pin<peripherals::FMC>>,
+        d20: Peri<'_, impl embassy_stm32::fmc::D20Pin<peripherals::FMC>>,
+        d21: Peri<'_, impl embassy_stm32::fmc::D21Pin<peripherals::FMC>>,
+        d22: Peri<'_, impl embassy_stm32::fmc::D22Pin<peripherals::FMC>>,
+        d23: Peri<'_, impl embassy_stm32::fmc::D23Pin<peripherals::FMC>>,
+        d24: Peri<'_, impl embassy_stm32::fmc::D24Pin<peripherals::FMC>>,
+        d25: Peri<'_, impl embassy_stm32::fmc::D25Pin<peripherals::FMC>>,
+        d26: Peri<'_, impl embassy_stm32::fmc::D26Pin<peripherals::FMC>>,
+        d27: Peri<'_, impl embassy_stm32::fmc::D27Pin<peripherals::FMC>>,
+        d28: Peri<'_, impl embassy_stm32::fmc::D28Pin<peripherals::FMC>>,
+        d29: Peri<'_, impl embassy_stm32::fmc::D29Pin<peripherals::FMC>>,
+        d30: Peri<'_, impl embassy_stm32::fmc::D30Pin<peripherals::FMC>>,
+        d31: Peri<'_, impl embassy_stm32::fmc::D31Pin<peripherals::FMC>>,
+        nbl0: Peri<'_, impl embassy_stm32::fmc::NBL0Pin<peripherals::FMC>>,
+        nbl1: Peri<'_, impl embassy_stm32::fmc::NBL1Pin<peripherals::FMC>>,
+        nbl2: Peri<'_, impl embassy_stm32::fmc::NBL2Pin<peripherals::FMC>>,
+        nbl3: Peri<'_, impl embassy_stm32::fmc::NBL3Pin<peripherals::FMC>>,
+        sdcke: Peri<'_, impl embassy_stm32::fmc::SDCKE0Pin<peripherals::FMC>>,
+        sdclk: Peri<'_, impl embassy_stm32::fmc::SDCLKPin<peripherals::FMC>>,
+        sdncas: Peri<'_, impl embassy_stm32::fmc::SDNCASPin<peripherals::FMC>>,
+        sdne: Peri<'_, impl embassy_stm32::fmc::SDNE0Pin<peripherals::FMC>>,
+        sdnras: Peri<'_, impl embassy_stm32::fmc::SDNRASPin<peripherals::FMC>>,
+        sdnwe: Peri<'_, impl embassy_stm32::fmc::SDNWEPin<peripherals::FMC>>,
+    ) -> Self {
+        let mut sdram: Sdram<Fmc<'_, peripherals::FMC>, Is42s32400f6> =
+            Fmc::sdram_a12bits_d32bits_4banks_bank1(
+                fmc,
+                a0,
+                a1,
+                a2,
+                a3,
+                a4,
+                a5,
+                a6,
+                a7,
+                a8,
+                a9,
+                a10,
+                a11,
+                ba0,
+                ba1,
+                d0,
+                d1,
+                d2,
+                d3,
+                d4,
+                d5,
+                d6,
+                d7,
+                d8,
+                d9,
+                d10,
+                d11,
+                d12,
+                d13,
+                d14,
+                d15,
+                d16,
+                d17,
+                d18,
+                d19,
+                d20,
+                d21,
+                d22,
+                d23,
+                d24,
+                d25,
+                d26,
+                d27,
+                d28,
+                d29,
+                d30,
+                d31,
+                nbl0,
+                nbl1,
+                nbl2,
+                nbl3,
+                sdcke,
+                sdclk,
+                sdncas,
+                sdne,
+                sdnras,
+                sdnwe,
+                Is42s32400f6 {},
+            );
         let mut delay = BusyDelay;
         let mem = sdram.init(&mut delay);
         SdramCtrl { mem }

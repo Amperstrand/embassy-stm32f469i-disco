@@ -46,7 +46,7 @@ pub const SYSCLK_HZ_168: u32 = 168_000_000;
 ///
 /// ```rust,ignore
 /// let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
-/// let sdram = SdramCtrl::new(&mut unsafe { embassy_stm32::Peripherals::steal() }, 180_000_000);
+/// let sdram = embassy_stm32f469i_disco::sdram_init!(p);
 /// ```
 pub fn config_180() -> Config {
     let mut config = Config::default();

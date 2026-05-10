@@ -21,7 +21,7 @@ extern crate alloc;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
-use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
+use embassy_stm32f469i_disco::config_180;
 use embassy_time::Timer;
 use embedded_graphics::{
     pixelcolor::Rgb888,
@@ -48,11 +48,11 @@ async fn main(_spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
     }
 
-    let mut p = embassy_stm32::init(config_180());
+    let p = embassy_stm32::init(config_180());
     info!("display_hybrid: starting (portrait 480x800)");
 
     // ── SDRAM init (must be before moving peripherals out of p) ──
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let framebuffer = sdram.into_bytes();
     info!("display_hybrid: SDRAM initialized");
 

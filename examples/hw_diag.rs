@@ -8,8 +8,7 @@ extern crate panic_probe;
 use embassy_stm32::gpio::{Level, Output, Pull, Speed};
 use embassy_stm32::i2c;
 use embassy_stm32f469i_disco::{
-    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
-    SYSCLK_HZ_180,
+    config_180, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
 };
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
@@ -579,10 +578,8 @@ async fn main(_spawner: embassy_executor::Spawner) {
 
     // SDRAM init
     defmt::info!("SDRAM init...");
-    let sdram = SdramCtrl::new(
-        &mut unsafe { embassy_stm32::Peripherals::steal() },
-        SYSCLK_HZ_180,
-    );
+    let peri2 = unsafe { embassy_stm32::Peripherals::steal() };
+    let sdram = embassy_stm32f469i_disco::sdram_init!(peri2);
     let base = sdram.base_address();
     let framebuffer = sdram.into_bytes();
     let words = embassy_stm32f469i_disco::display::SDRAM_SIZE_BYTES / 4;

@@ -23,9 +23,7 @@ use core::fmt::Write;
 use embassy_executor::Spawner;
 use embassy_stm32::dsihost;
 use embassy_stm32f469i_disco::display::SdramCtrl;
-use embassy_stm32f469i_disco::{
-    config_180, BoardHint, DisplayCtrl, TouchCtrl, TouchPoint, SYSCLK_HZ_180,
-};
+use embassy_stm32f469i_disco::{config_180, BoardHint, DisplayCtrl, TouchCtrl, TouchPoint};
 use embassy_time::{block_for, Duration, Timer};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use embedded_graphics::{
@@ -483,8 +481,8 @@ async fn main(_spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, HEAP_SIZE);
     }
 
-    let mut p = embassy_stm32::init(config_180());
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let p = embassy_stm32::init(config_180());
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let framebuffer = sdram.into_bytes();
     let mut display = DisplayCtrl::new(
         framebuffer,

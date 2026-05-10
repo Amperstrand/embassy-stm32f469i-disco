@@ -11,11 +11,11 @@ use embassy_time::Timer;
 
 #[embassy_executor::main]
 async fn main(_spawner: embassy_executor::Spawner) {
-    let mut p = embassy_stm32::init(Config::default());
+    let p = embassy_stm32::init(Config::default());
 
     defmt::info!("Starting SDRAM test...");
 
-    let mut sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let mut sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let ok = sdram.test_quick();
     defmt::info!("SDRAM test: {}", ok);
 

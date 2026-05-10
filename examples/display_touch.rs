@@ -4,9 +4,7 @@
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_stm32::i2c;
-use embassy_stm32f469i_disco::{
-    config_180, display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, SYSCLK_HZ_180,
-};
+use embassy_stm32f469i_disco::{config_180, BoardHint, DisplayCtrl, TouchCtrl};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
@@ -31,10 +29,10 @@ const POLL_MS: u32 = 50;
 async fn main(_spawner: Spawner) {
     info!("display_touch: init...");
 
-    let mut p = embassy_stm32::init(config_180());
+    let p = embassy_stm32::init(config_180());
 
     info!("display_touch: init SDRAM...");
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let framebuffer = sdram.into_bytes();
 
     info!("display_touch: init display...");

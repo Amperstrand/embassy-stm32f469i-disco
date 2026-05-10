@@ -2,10 +2,10 @@
 
 use embassy_stm32::gpio::{Input, Level, Output, Pull, Speed};
 use embassy_stm32::peripherals;
-use embassy_stm32::{rcc, Peri, Peripherals};
+use embassy_stm32::{Peri, Peripherals};
 
 use crate::bist::{BootTestResults, TestResult};
-use crate::{BoardHint, DisplayCtrl, SdramCtrl, TouchCtrl};
+use crate::{BoardHint, DisplayCtrl, TouchCtrl};
 
 /// Errors that can occur during [`Board::try_new`] initialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,7 +13,7 @@ use crate::{BoardHint, DisplayCtrl, SdramCtrl, TouchCtrl};
 #[non_exhaustive]
 pub enum BoardInitError {
     /// HCLK frequency could not be determined from the RCC clock tree.
-    /// This should never happen after a valid `config_180()` / `config_168()` call.
+    /// This variant is reserved for future use.
     HclkUnavailable,
     /// Display initialization failed.
     Display(crate::DisplayInitError),
@@ -81,21 +81,9 @@ impl Board {
     /// Consumes I2C1 (PB8/PB9) for the touch controller.
     ///
     /// # Errors
-    ///
-    /// Returns [`BoardInitError::HclkUnavailable`] if the HCLK frequency
-    /// cannot be determined (should never happen after a valid
-    /// [`config_180()`](crate::config_180) /
-    /// [`config_168()`](crate::config_168) call).
-    ///
     /// Returns [`BoardInitError::Display`] if display initialization fails.
-    pub fn try_new(mut p: Peripherals, hint: BoardHint) -> Result<Self, BoardInitError> {
-        let source_clock_hz = rcc::clocks(&p.RCC)
-            .hclk1
-            .to_hertz()
-            .ok_or(BoardInitError::HclkUnavailable)?
-            .0;
-
-        let mut sdram = SdramCtrl::new(&mut p, source_clock_hz);
+    pub fn try_new(p: Peripherals, hint: BoardHint) -> Result<Self, BoardInitError> {
+        let mut sdram = crate::sdram_init!(p);
         let sdram_ok = sdram.test_quick();
         let framebuffer = sdram.into_bytes();
 

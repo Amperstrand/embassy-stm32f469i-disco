@@ -4,7 +4,7 @@
 use core::slice;
 
 use defmt_rtt as _;
-use embassy_stm32f469i_disco::{config_180, Board, BoardHint, SdramCtrl, SDRAM_SIZE_BYTES};
+use embassy_stm32f469i_disco::{config_180, Board, BoardHint, SDRAM_SIZE_BYTES};
 use stm32_metapac::LTDC;
 
 const SDRAM_BASE: usize = 0xC000_0000;
@@ -15,7 +15,9 @@ fn sdram_scratch_words(len: usize) -> &'static mut [u32] {
 }
 
 fn sdram_scratch_bytes(offset: usize, len: usize) -> &'static mut [u8] {
-    unsafe { slice::from_raw_parts_mut((SDRAM_BASE + SDRAM_SCRATCH_OFFSET + offset) as *mut u8, len) }
+    unsafe {
+        slice::from_raw_parts_mut((SDRAM_BASE + SDRAM_SCRATCH_OFFSET + offset) as *mut u8, len)
+    }
 }
 
 fn rng_read() -> u32 {
@@ -113,7 +115,7 @@ mod tests {
     use embedded_graphics::{
         pixelcolor::Rgb888,
         prelude::*,
-        primitives::{Rectangle, PrimitiveStyle},
+        primitives::{PrimitiveStyle, Rectangle},
     };
     use embedded_hal_02::blocking::serial::Write as _;
 
@@ -122,8 +124,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn sdram_write_read_pattern() {
-        let mut p = embassy_stm32::init(config_180());
-        let sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let sdram = embassy_stm32f469i_disco::sdram_init!(p);
         let ram = unsafe { slice::from_raw_parts_mut(sdram.base_address() as *mut u32, 1024) };
 
         for (i, word) in ram.iter_mut().enumerate() {
@@ -137,8 +139,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn sdram_checkerboard() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
         let ram = sdram_scratch_words(65_536);
         for word in &mut ram[..] {
             *word = 0xAAAA_AAAA;
@@ -151,8 +153,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn sdram_march_c() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
         let ram = sdram_scratch_words(65_536);
 
         for word in &mut ram[..] {
@@ -174,8 +176,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn sdram_end_of_ram() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
 
         let tail_words = 16_384usize;
         let start = SDRAM_BASE + SDRAM_SIZE_BYTES - tail_words * 4;
@@ -200,8 +202,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn sdram_byte_halfword() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
 
         let bytes = sdram_scratch_bytes(0, 4096);
         for (i, byte) in bytes.iter_mut().enumerate() {
@@ -432,7 +434,9 @@ mod tests {
     async fn adc_temp_sensor() {
         embassy_stm32::init(config_180());
         stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
-        stm32_metapac::ADC123_COMMON.ccr().modify(|w| w.set_tsvrefe(true));
+        stm32_metapac::ADC123_COMMON
+            .ccr()
+            .modify(|w| w.set_tsvrefe(true));
         cortex_m::asm::delay(10_000);
 
         let adc = stm32_metapac::ADC1;
@@ -449,7 +453,8 @@ mod tests {
             w.set_sq(0, 0);
         });
         adc.sqr3().write(|w| w.set_sq(0, 18));
-        adc.smpr1().write(|w| w.set_smp(8, stm32_metapac::adc::vals::SampleTime::CYCLES480));
+        adc.smpr1()
+            .write(|w| w.set_smp(8, stm32_metapac::adc::vals::SampleTime::CYCLES480));
         adc.cr2().modify(|w| w.set_adon(true));
         cortex_m::asm::delay(3);
         adc.cr2().modify(|w| w.set_swstart(true));
@@ -463,7 +468,9 @@ mod tests {
     async fn adc_vrefint() {
         embassy_stm32::init(config_180());
         stm32_metapac::RCC.apb2enr().modify(|w| w.set_adc1en(true));
-        stm32_metapac::ADC123_COMMON.ccr().modify(|w| w.set_tsvrefe(true));
+        stm32_metapac::ADC123_COMMON
+            .ccr()
+            .modify(|w| w.set_tsvrefe(true));
         cortex_m::asm::delay(10_000);
 
         let adc = stm32_metapac::ADC1;
@@ -480,7 +487,8 @@ mod tests {
             w.set_sq(0, 0);
         });
         adc.sqr3().write(|w| w.set_sq(0, 17));
-        adc.smpr1().write(|w| w.set_smp(7, stm32_metapac::adc::vals::SampleTime::CYCLES480));
+        adc.smpr1()
+            .write(|w| w.set_smp(7, stm32_metapac::adc::vals::SampleTime::CYCLES480));
         adc.cr2().modify(|w| w.set_adon(true));
         cortex_m::asm::delay(3);
         adc.cr2().modify(|w| w.set_swstart(true));
@@ -537,8 +545,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn dma_64b() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
         stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
 
         let src = sdram_scratch_bytes(0, 64);
@@ -559,8 +567,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn dma_4096b() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
         stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
 
         let src = sdram_scratch_bytes(0, 4096);
@@ -581,8 +589,8 @@ mod tests {
     #[test]
     #[timeout(30)]
     async fn dma_repeated() {
-        let mut p = embassy_stm32::init(config_180());
-        let _sdram = SdramCtrl::new(&mut p, 180_000_000);
+        let p = embassy_stm32::init(config_180());
+        let _sdram = embassy_stm32f469i_disco::sdram_init!(p);
         stm32_metapac::RCC.ahb1enr().modify(|w| w.set_dma2en(true));
 
         for i in 0..10 {

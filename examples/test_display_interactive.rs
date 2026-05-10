@@ -26,8 +26,7 @@ use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::i2c;
 use embassy_stm32::{bind_interrupts, peripherals, usb};
 use embassy_stm32f469i_disco::{
-    config_180, display::SdramCtrl, reset_usb_phy, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT,
-    FB_WIDTH,
+    config_180, reset_usb_phy, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
@@ -88,9 +87,9 @@ async fn main(spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, 64 * 1024);
     }
 
-    let mut p = embassy_stm32::init(config_180());
+    let p = embassy_stm32::init(config_180());
 
-    let sdram = SdramCtrl::new(&mut p, 180_000_000);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let framebuffer = sdram.into_bytes();
     let mut display = DisplayCtrl::new(
         framebuffer,

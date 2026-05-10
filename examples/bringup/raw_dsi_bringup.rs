@@ -23,7 +23,7 @@ use embassy_executor::Spawner;
 use embassy_stm32::dsihost::DsiHost;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
-use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
+use embassy_stm32f469i_disco::config_180;
 use embassy_time::{block_for, Duration, Timer};
 use embedded_display_controller::dsi::{DsiHostCtrlIo, DsiReadCommand, DsiWriteCommand};
 use nt35510::Nt35510;
@@ -318,10 +318,10 @@ impl embedded_hal_02::blocking::delay::DelayMs<u32> for BusyDelay {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut p = embassy_stm32::init(config_180());
+    let p = embassy_stm32::init(config_180());
     info!("embassy_display_bsp_minimal: start");
 
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let mut led_green = Output::new(p.PG6, Level::High, Speed::Low);
     let mut led_orange = Output::new(p.PD4, Level::High, Speed::Low);
     let mut led_red = Output::new(p.PD5, Level::High, Speed::Low);

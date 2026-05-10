@@ -21,7 +21,7 @@ use embassy_executor::Spawner;
 use embassy_stm32::dsihost::{DsiHost, PacketType};
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::ltdc::Ltdc;
-use embassy_stm32f469i_disco::{config_180, display::SdramCtrl, SYSCLK_HZ_180};
+use embassy_stm32f469i_disco::config_180;
 use embassy_time::{block_for, Duration, Timer};
 use linked_list_allocator::LockedHeap;
 use stm32_metapac::dsihost::regs::{Ier0, Ier1};
@@ -99,11 +99,11 @@ const NT35510_RASET_PORTRAIT: &[u8] = &[NT35510_CMD_RASET, 0x00, 0x00, 0x03, 0x1
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
-    let mut p = embassy_stm32::init(config_180());
+    let p = embassy_stm32::init(config_180());
     info!("display_minimal: starting (portrait 480x800)");
 
     // ── SDRAM init (must be before moving peripherals out of p) ──
-    let sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_180);
+    let sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let framebuffer = sdram.into_bytes();
     info!("display_minimal: SDRAM initialized");
 

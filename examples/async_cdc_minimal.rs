@@ -26,7 +26,7 @@ use embassy_time::{Duration, Ticker, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
 use embassy_usb::Builder;
 
-use embassy_stm32f469i_disco::{config_168, display::SdramCtrl, send_with_zlp, SYSCLK_HZ_168};
+use embassy_stm32f469i_disco::{config_168, send_with_zlp};
 
 bind_interrupts!(struct Irqs {
     OTG_FS => usb::InterruptHandler<peripherals::USB_OTG_FS>;
@@ -44,11 +44,11 @@ async fn main(_spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, 64 * 1024);
     }
 
-    let mut p = embassy_stm32::init(config_168());
+    let p = embassy_stm32::init(config_168());
 
     embassy_stm32f469i_disco::reset_usb_phy();
 
-    let mut sdram = SdramCtrl::new(&mut p, SYSCLK_HZ_168);
+    let mut sdram = embassy_stm32f469i_disco::sdram_init!(p);
     let _sdram_base = sdram.base_address();
     let _sdram_ok = sdram.test_quick();
     let framebuffer = sdram.into_bytes();
