@@ -3,6 +3,7 @@
 
 use core::slice;
 
+use defmt_rtt as _;
 use embassy_stm32f469i_disco::{config_180, Board, BoardHint, SdramCtrl, SYSCLK_HZ_180};
 use stm32_metapac::LTDC;
 
@@ -31,7 +32,7 @@ mod tests {
     #[timeout(30)]
     async fn display_init() {
         let p = embassy_stm32::init(config_180());
-        let _board = Board::new(p, BoardHint::ForceNt35510);
+        let _board = Board::try_new(p, BoardHint::ForceNt35510).expect("board init");
 
         assert!(LTDC.gcr().read().ltdcen());
         assert!(LTDC.layer(0).cr().read().len());
@@ -41,7 +42,7 @@ mod tests {
     #[timeout(30)]
     async fn touch_vendor_id() {
         let p = embassy_stm32::init(config_180());
-        let mut board = Board::new(p, BoardHint::ForceNt35510);
+        let mut board = Board::try_new(p, BoardHint::ForceNt35510).expect("board init");
 
         assert_eq!(board.touch.read_vendor_id().unwrap(), 0x11);
     }

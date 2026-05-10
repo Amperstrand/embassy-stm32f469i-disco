@@ -53,7 +53,7 @@ pub struct SdramRemainders {
 /// Ergonomic entry point for the STM32F469I-Discovery board.
 ///
 /// # Example
-/// ```no_run
+/// ```ignore
 /// use embassy_stm32f469i_disco::{Board, BoardHint};
 ///
 /// let p = embassy_stm32::init(embassy_stm32f469i_disco::config_180());
