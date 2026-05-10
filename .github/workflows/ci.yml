@@ -18,9 +18,9 @@ jobs:
         features:
           - "--no-default-features"
           - "--no-default-features --features bringup"
-          - "--features display"
-          - "--features touch"
-          - "--features display,touch"
+          - "--no-default-features --features display"
+          - "--no-default-features --features touch"
+          - "--no-default-features --features display,touch"
           - "--all-features"
     steps:
       - uses: actions/checkout@v4
@@ -66,6 +66,9 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --target thumbv7em-none-eabihf --all-features --lib --examples -- -D warnings
+
+      - name: Run clippy (bringup examples)
+        run: cargo clippy --target thumbv7em-none-eabihf --all-features --lib --examples --features bringup -- -D warnings
 
   fmt:
     runs-on: ubuntu-latest
