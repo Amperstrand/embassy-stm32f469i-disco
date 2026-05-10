@@ -27,7 +27,7 @@ USB CDC tests can run at 168 MHz with PLLSAI for display coexistence, or standal
 
 ## CI
 
-GitHub Actions runs on push/PR: build library + all examples, `cargo fmt`, `cargo clippy -D warnings`. Zero warnings required.
+GitHub Actions runs on push/PR: build library + all examples (6 feature combos), `cargo fmt`, `cargo clippy -D warnings` (including bringup examples), `cargo doc`, `cargo package`. Zero warnings required.
 
 ## Architecture
 
@@ -161,7 +161,8 @@ Tests: `usb_init`, `usb_cdc_init`, `usb_cdc_echo`. The echo test requires the ho
 |--------|--------|-------|
 | `40f17e5` | `main` | BSP production pass complete: Board::try_new, EdgeFilter::default, DsiTimeout split, SDRAM soundness, example hygiene. All code changes done; HIL pending. |
 | `4278bbd` | `main` | All examples migrated to clock presets, DsiHostCtrlIo casing fix |
-| `57c20e3` | `main` | docs: known-good pins, clock config adoption status. **Current HEAD** |
+| `57c20e3` | `main` | docs: known-good pins, clock config adoption status |
+| `a4e58a2` | `main` | bsp-final-quality-pass: fallible framebuffer, BoardHint::Auto wiring, defmt derives, USB MPS assert, doc fixes. **Current HEAD** |
 | `07e09cd` | `main` | hw_diag RNG/Timer/DMA fixes (pending HW verification, issue #29) |
 | `f856b6e` | `main` | USB PHY reset, clock docs corrected. **Used by micronuts + microfips** |
 | `d28c859` | `main` | docs: correct 48MHz clock mechanism (PLLSAI_Q not PLLSAI_P) |
@@ -341,9 +342,11 @@ The following items were identified during the production pass but deferred to k
 
 1. **nt35510 crates.io publish** — postponed pending hardware re-test. BSP currently pins `nt35510` via git rev. Publish after HIL confirms display still works.
 2. **Display flickering investigation** — intermittent flicker reported on some NT35510 panels. Root cause unknown; may be LTDC pixel clock tolerance or DSI lane timing. Needs oscilloscope capture.
-3. **`clone_unchecked` typed helper macro** — the 56 `clone_unchecked` calls in `src/sdram.rs` are documented with SAFETY comments but could be factored into a `sdram_pin!(...)` macro for clarity. Deferred to avoid churn.
+3. **`clone_unchecked` typed helper macro** — resolved: SDRAM now uses embassy type-safe FMC API (`365bdff`), eliminating `clone_unchecked` entirely.
 4. **`Board::try_new` HSE-bypass detection** — if HSE is absent (e.g. crystal not populated), `config_180()` will hang. A future `BoardInitError::HseTimeout` variant could surface this. Deferred pending hardware evidence.
 5. **HIL test suite automation** — `run_tests.sh` and `run_usb_tests.sh` work but require manual board attachment. A CI-connected HIL runner would catch regressions automatically.
+6. **Board resource split** — `Board::try_new` is intentionally monolithic. Fine-grained `DisplayCtrl::try_new()` / `TouchCtrl::new()` already available for users who don't want full init. A `BoardParts` API is low priority.
+7. **Reset pin ownership** — `DisplayCtrl` intentionally leaks the LCD reset pin via `mem::forget` with SAFETY comment. Storing it would require awkward generic parameter. Low priority.
 
 ## Embassy USB Investigation (embassy-rs/embassy#5738)
 
