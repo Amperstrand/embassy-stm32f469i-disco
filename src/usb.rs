@@ -69,6 +69,12 @@ pub trait CdcAcmWriter {
     type Error;
 
     /// Maximum packet size for the bulk IN endpoint (typically 64 for full-speed).
+    /// MUST be greater than 0.
+    ///
+    /// # Invariant
+    ///
+    /// Implementations must return a non-zero value. Returning 0 is a programmer
+    /// error and will trigger a debug-assertion in [`send_with_zlp`].
     fn max_packet_size(&self) -> u16;
 
     /// Write a single packet. `data` must be ≤ `max_packet_size()`.
@@ -119,6 +125,7 @@ impl<'d, D: Driver<'d>> CdcAcmWriter for embassy_usb::class::cdc_acm::Sender<'d,
 /// ```
 pub async fn send_with_zlp<W: CdcAcmWriter>(writer: &mut W, data: &[u8]) -> Result<(), W::Error> {
     let max = writer.max_packet_size() as usize;
+    debug_assert!(max > 0, "CdcAcmWriter::max_packet_size() returned 0; CDC endpoints must have non-zero MPS");
     let mut offset = 0;
     while offset < data.len() {
         let end = (offset + max).min(data.len());
