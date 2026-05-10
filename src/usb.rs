@@ -125,7 +125,10 @@ impl<'d, D: Driver<'d>> CdcAcmWriter for embassy_usb::class::cdc_acm::Sender<'d,
 /// ```
 pub async fn send_with_zlp<W: CdcAcmWriter>(writer: &mut W, data: &[u8]) -> Result<(), W::Error> {
     let max = writer.max_packet_size() as usize;
-    debug_assert!(max > 0, "CdcAcmWriter::max_packet_size() returned 0; CDC endpoints must have non-zero MPS");
+    debug_assert!(
+        max > 0,
+        "CdcAcmWriter::max_packet_size() returned 0; CDC endpoints must have non-zero MPS"
+    );
     let mut offset = 0;
     while offset < data.len() {
         let end = (offset + max).min(data.len());

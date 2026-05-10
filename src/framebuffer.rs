@@ -26,9 +26,7 @@ pub(crate) fn framebuffer_from_bytes<F: DisplayFormat>(
 
     // SAFETY: bytes comes from SDRAM (aligned, non-null, exclusive access).
     // Alignment and length are checked above and return Err if violated.
-    Ok(unsafe {
-        &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels)
-    })
+    Ok(unsafe { &mut *core::ptr::slice_from_raw_parts_mut(bytes.as_mut_ptr().cast(), len_pixels) })
 }
 
 /// View over a pixel buffer implementing [`embedded_graphics::draw_target::DrawTarget`].
