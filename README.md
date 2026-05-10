@@ -164,7 +164,7 @@ See `examples/async_cdc_minimal.rs` for a complete USB CDC example.
 | `TouchCtrl<I2C>` | struct | FT6X06 touch controller (generic over any I2C) |
 | `TouchPoint` | struct | Touch coordinates with `Clone`, `Copy`, `Display` |
 | `TouchError<E>` | enum | Touch controller error type |
-| `EdgeFilter` | struct | Phantom-touch rejection filter; `Default` = 3px FT6X06 margin, override with `EdgeFilter::none()` |
+| `EdgeFilter` | struct | Phantom-touch rejection filter; `Default` = 3px FT6X06 margin |
 | `BoardHint` | enum | `Auto`, `ForceNt35510`, `ForceOtm8009a` |
 | `config_180()` | fn | 180 MHz PLL config (display + USB + touch) |
 | `config_168()` | fn | 168 MHz PLL config |
