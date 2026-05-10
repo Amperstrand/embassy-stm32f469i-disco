@@ -24,6 +24,7 @@ const REG_TD_STATUS: u8 = 0x02;
 const REG_TOUCH1_XH: u8 = 0x03;
 
 /// Error type for FT6X06 touch controller operations.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum TouchError<E> {
     /// I2C bus error (NACK, timeout, bus error, etc.).
@@ -54,6 +55,7 @@ impl<E> From<E> for TouchError<E> {
 /// documented across multiple Amperstrand STM32F469 projects (see AGENTS.md).
 ///
 /// Use [`EdgeFilter::default_ft6x06()`] for the recommended filter values.
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EdgeFilter {
     /// Minimum valid X coordinate (reject touches left of this value).
@@ -106,6 +108,7 @@ impl Default for EdgeFilter {
 ///
 /// X ranges 0..479, Y ranges 0..799. Phantom touches may appear at edges —
 /// filter with a 3px margin using [`EdgeFilter::default_ft6x06()`] (see module docs).
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct TouchPoint {
     /// X coordinate of the touch event (0..479).
