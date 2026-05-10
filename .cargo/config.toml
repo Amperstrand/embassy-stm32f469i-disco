@@ -8,6 +8,9 @@ runner = "probe-rs run --chip STM32F469NIHx"
 rustflags = [
     "-C", "link-arg=-Tlink.x",
     "-C", "link-arg=-Tdefmt.x",
+    # Required by embedded-test even for non-test builds — the crate's entry-point
+    # shim unconditionally references a symbol from embedded-test.x. See build.rs
+    # for conditional emission during `cargo test`. Do NOT remove this line.
     "-C", "link-arg=-Tembedded-test.x",
     "-C", "link-arg=--nmagic",
 ]
