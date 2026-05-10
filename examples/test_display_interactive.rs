@@ -24,11 +24,10 @@ use alloc::vec::Vec;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::i2c;
-use embassy_stm32::rcc::*;
-use embassy_stm32::time::Hertz;
-use embassy_stm32::{bind_interrupts, peripherals, usb, Config};
+use embassy_stm32::{bind_interrupts, peripherals, usb};
 use embassy_stm32f469i_disco::{
-    display::SdramCtrl, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT, FB_WIDTH,
+    config_180, display::SdramCtrl, reset_usb_phy, BoardHint, DisplayCtrl, TouchCtrl, FB_HEIGHT,
+    FB_WIDTH,
 };
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
@@ -89,32 +88,7 @@ async fn main(spawner: Spawner) {
             .init(core::ptr::addr_of_mut!(HEAP_MEMORY) as *mut u8, 64 * 1024);
     }
 
-    let mut config = Config::default();
-    config.rcc.hse = Some(Hse {
-        freq: Hertz(8_000_000),
-        mode: HseMode::Oscillator,
-    });
-    config.rcc.pll_src = PllSource::HSE;
-    config.rcc.pll = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL360,
-        divp: Some(PllPDiv::DIV2),
-        divq: Some(PllQDiv::DIV7),
-        divr: Some(PllRDiv::DIV6),
-    });
-    config.rcc.pllsai = Some(Pll {
-        prediv: PllPreDiv::DIV8,
-        mul: PllMul::MUL384,
-        divp: Some(PllPDiv::DIV8),
-        divq: Some(PllQDiv::DIV8),
-        divr: Some(PllRDiv::DIV7),
-    });
-    config.rcc.mux.clk48sel = mux::Clk48sel::PLLSAI1_Q;
-    config.rcc.ahb_pre = AHBPrescaler::DIV1;
-    config.rcc.apb1_pre = APBPrescaler::DIV4;
-    config.rcc.apb2_pre = APBPrescaler::DIV2;
-    config.rcc.sys = Sysclk::PLL1_P;
-    let mut p = embassy_stm32::init(config);
+    let mut p = embassy_stm32::init(config_180());
 
     let sdram = SdramCtrl::new(&mut p, 180_000_000);
     let framebuffer = sdram.into_bytes();
@@ -131,7 +105,7 @@ async fn main(spawner: Spawner) {
     let mut touch = TouchCtrl::new(i2c);
     let mut led = Output::new(p.PG6, Level::Low, Speed::Low);
 
-    usb_phy_reset();
+    reset_usb_phy();
 
     static EP_BUF: StaticCell<[u8; 512]> = StaticCell::new();
     let ep_buf = EP_BUF.init([0u8; 512]);
@@ -1005,38 +979,6 @@ fn isqrt(n: i32) -> i32 {
         y = (x + n / x) / 2;
     }
     x
-}
-
-fn usb_phy_reset() {
-    let rcc = stm32_metapac::RCC;
-    rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(false));
-    cortex_m::asm::delay(100);
-    rcc.ahb2enr().modify(|w| w.set_usb_otg_fsen(true));
-    rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(true));
-    cortex_m::asm::delay(100);
-    rcc.ahb2rstr().modify(|w| w.set_usb_otg_fsrst(false));
-    cortex_m::asm::delay(100);
-    let otg = 0x5000_0000usize as *mut u32;
-    unsafe {
-        let mut t = 100_000u32;
-        while otg.add(0x010 / 4).read_volatile() & (1 << 31) == 0 {
-            t -= 1;
-            if t == 0 {
-                break;
-            }
-        }
-        otg.add(0x010 / 4).write_volatile(1);
-        t = 100_000u32;
-        while otg.add(0x010 / 4).read_volatile() & 1 != 0 {
-            t -= 1;
-            if t == 0 {
-                break;
-            }
-        }
-        otg.add(0x038 / 4).write_volatile(0);
-        cortex_m::asm::delay(100);
-        otg.add(0x038 / 4).write_volatile(1 << 16);
-    }
 }
 
 async fn blink(led: &mut Output<'_>, count: usize) {

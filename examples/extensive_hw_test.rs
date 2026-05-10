@@ -663,7 +663,9 @@ async fn phase1_raw_tests(peri: &Peripherals) {
                 w.set_sq(0, 0);
             });
             adc.sqr3().write(|w| w.set_sq(0, 18));
-            adc.smpr2()
+            // Channel 18 (temp sensor) is in SMPR1 at index 8 (channels 10-18, n=18-10=8).
+            // SMPR2 covers channels 0-9 only — smpr2().set_smp(8, ...) sets ch8, NOT ch18.
+            adc.smpr1()
                 .write(|w| w.set_smp(8, stm32_metapac::adc::vals::SampleTime::CYCLES480));
             adc.cr2().modify(|w| w.set_adon(true));
             cortex_m::asm::delay(3);
@@ -681,7 +683,8 @@ async fn phase1_raw_tests(peri: &Peripherals) {
             cortex_m::asm::delay(10_000);
             let adc = stm32_metapac::ADC1;
             adc.sqr3().write(|w| w.set_sq(0, 17));
-            adc.smpr2()
+            // Channel 17 (VREFINT) is in SMPR1 at index 7 (channels 10-18, n=17-10=7).
+            adc.smpr1()
                 .write(|w| w.set_smp(7, stm32_metapac::adc::vals::SampleTime::CYCLES480));
             adc.cr2().modify(|w| w.set_swstart(true));
             while !adc.sr().read().eoc() {}
