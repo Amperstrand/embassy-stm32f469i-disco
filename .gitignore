@@ -1,3 +1,8 @@
 /target
 tests/results/
 hil-results/
+
+# agent-loop / QA artifacts
+.sisyphus/
+.playwright-mcp/
+.omo/
