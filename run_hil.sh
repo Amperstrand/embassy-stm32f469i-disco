@@ -3,7 +3,7 @@
 #
 # Runs all hardware-in-the-loop tests in sequence:
 #   Phase 1: embedded-test HIL (cargo test, 26 tests via probe-rs)
-#   Phase 2: RTT example tests (probe-rs flash + RTT capture, 10 suites)
+#   Phase 2: RTT example tests (probe-rs flash + RTT capture, 4 suites)
 #   Phase 3: USB CDC tests (st-flash + serial, 2 suites)
 #
 # Usage:
@@ -71,7 +71,7 @@ Unified HIL test runner for STM32F469I-DISCO BSP.
 
 Phases:
   Phase 1 (hil): embedded-test HIL — cargo test, probe-rs, per-test reset (26 tests)
-  Phase 2 (rtt): RTT example tests — probe-rs flash + RTT capture (10 suites)
+  Phase 2 (rtt): RTT example tests — probe-rs flash + RTT capture (4 suites)
   Phase 3 (usb): USB CDC tests — st-flash + serial communication (2 suites)
 
 Options:
@@ -99,7 +99,7 @@ do_list() {
     echo ""
     echo "Phase 1: embedded-test HIL (26 tests)"
     echo "  sdram_write_read_pattern, sdram_checkerboard, sdram_march_c,"
-    echo "  sdram_end_of_ram, sdram_byte_halfword, sdram_misaligned,"
+    echo "  sdram_end_of_ram, sdram_byte_halfword,"
     echo "  display_init, display_color_fill,"
     echo "  touch_vendor_id, touch_chip_model,"
     echo "  led_toggle,"
@@ -110,14 +110,15 @@ do_list() {
     echo "  uart_init, uart_tx_byte, uart_tx_multi_byte,"
     echo "  dma_64b, dma_4096b, dma_repeated"
     echo ""
-    echo "Phase 2: RTT Example Tests (10 suites)"
-    echo "  test_led (16), test_gpio (5), test_async_timer (10),"
-    echo "  test_rng (3), test_adc (2), test_sdram (14),"
-    echo "  test_uart (4), test_dma (5), test_display (14), test_touch (5)"
+    echo "Phase 2: RTT Example Tests (4 suites)"
+    echo "  extensive_hw_test (~39 tests, comprehensive hardware test)"
+    echo "  hw_diag (~38 tests, on-screen diagnostics)"
+    echo "  board_blinky (smoke test, LED blink)"
+    echo "  test_visual_interactive (8 tests, interactive display+touch, 10min timeout)"
     echo ""
     echo "Phase 3: USB CDC Tests (2 suites)"
-    echo "  usb_cdc_test (3 tests, st-flash + serial)"
-    echo "  usb_cdc_stress (600 echo packets, st-flash + serial)"
+    echo "  usb_cdc_echo (async_cdc_minimal, st-flash + serial)"
+    echo "  usb_cdc_stress (test_usb_cdc_stress, 600 echo packets, st-flash + serial)"
 }
 
 find_usb_port() {
@@ -270,18 +271,12 @@ print(json.dumps(tests))" 2>/dev/null || echo "$JSON_HIL_TESTS")
 # ── Phase 2: RTT Example Tests ───────────────────────────────────
 
 declare -A RTT_TIMEOUTS
-RTT_TIMEOUTS[test_led]=30
-RTT_TIMEOUTS[test_gpio]=30
-RTT_TIMEOUTS[test_async_timer]=30
-RTT_TIMEOUTS[test_rng]=30
-RTT_TIMEOUTS[test_adc]=30
-RTT_TIMEOUTS[test_sdram]=60
-RTT_TIMEOUTS[test_uart]=30
-RTT_TIMEOUTS[test_dma]=30
-RTT_TIMEOUTS[test_display]=120
-RTT_TIMEOUTS[test_touch]=30
+RTT_TIMEOUTS[extensive_hw_test]=180
+RTT_TIMEOUTS[hw_diag]=180
+RTT_TIMEOUTS[board_blinky]=30
+RTT_TIMEOUTS[test_visual_interactive]=600
 
-RTT_TESTS=(test_led test_gpio test_async_timer test_rng test_adc test_sdram test_uart test_dma test_display test_touch)
+RTT_TESTS=(extensive_hw_test hw_diag board_blinky test_visual_interactive)
 
 run_rtt_test() {
     local example=$1
@@ -407,7 +402,7 @@ run_phase_rtt() {
         local status="${r%%:*}"
         local name="${r#*:}"
         case "$name" in
-            test_*)
+            extensive_hw_test|hw_diag|board_blinky|test_visual_interactive)
                 if [ "$status" = "PASS" ]; then
                     phase_passed=$((phase_passed + 1))
                 else
@@ -526,8 +521,8 @@ print(json.dumps(tests))" 2>/dev/null || echo "$JSON_USB_TESTS")
 run_phase_usb() {
     log "Phase 3: USB CDC Tests"
 
-    # 3a: USB CDC connectivity test
-    run_usb_test "test_usb_cdc" "tests/usb_cdc_test.py" "--timeout 30" || true
+    # 3a: USB CDC echo test
+    run_usb_test "async_cdc_minimal" "tests/usb_cdc_test.py" "--timeout 30" || true
 
     # 3b: USB CDC stress test
     run_usb_test "test_usb_cdc_stress" "tests/usb_cdc_stress.py" "--count 600" || true
@@ -538,7 +533,7 @@ run_phase_usb() {
         local status="${r%%:*}"
         local name="${r#*:}"
         case "$name" in
-            test_usb_cdc|test_usb_cdc_stress)
+            async_cdc_minimal|test_usb_cdc_stress)
                 if [ "$status" = "PASS" ]; then
                     phase_passed=$((phase_passed + 1))
                 else

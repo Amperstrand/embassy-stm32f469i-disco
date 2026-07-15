@@ -1,0 +1,18 @@
+error: no example target named `test_usb` in default-run packages
+help: available example targets:
+    async_cdc_minimal
+    board_blinky
+    board_display
+    board_touch
+    clk48_hypothesis
+    display_hybrid
+    display_touch
+    display_touch_rgb565
+    extensive_hw_test
+    hw_diag
+    nt35510_register_probe
+    raw_display_minimal
+    raw_dsi_bringup
+    sdram_raw
+    test_display_interactive
+    test_usb_cdc_stress

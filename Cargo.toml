@@ -107,6 +107,11 @@ required-features = ["display"]
 test = false
 
 [[example]]
+name = "test_visual_interactive"
+required-features = ["display", "touch"]
+test = false
+
+[[example]]
 name = "test_usb_cdc_stress"
 test = false
 
