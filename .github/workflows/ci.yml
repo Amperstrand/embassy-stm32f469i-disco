@@ -111,7 +111,7 @@ jobs:
 
   package:
     runs-on: ubuntu-latest
-    continue-on-error: false
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 

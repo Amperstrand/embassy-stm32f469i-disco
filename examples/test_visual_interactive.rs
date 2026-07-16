@@ -18,9 +18,7 @@
 
 use defmt::{error, info};
 use embassy_executor::Spawner;
-use embassy_stm32f469i_disco::{
-    config_180, Board, BoardHint, FB_HEIGHT, FB_WIDTH,
-};
+use embassy_stm32f469i_disco::{config_180, Board, BoardHint, FB_HEIGHT, FB_WIDTH};
 use embassy_time::{Duration, Timer};
 use embedded_graphics::{
     mono_font::{ascii::FONT_10X20, MonoTextStyle},
@@ -72,7 +70,12 @@ async fn main(_spawner: Spawner) {
     {
         let mut fb = board.display.fb();
         fb.clear(Rgb888::RED);
-        draw_question(&mut fb, "1/5: Solid RED", "Is the screen completely red?", s_white);
+        draw_question(
+            &mut fb,
+            "1/5: Solid RED",
+            "Is the screen completely red?",
+            s_white,
+        );
         draw_yes_no(&mut fb, s_black, s_white);
         let pass = wait_yes_no(&mut board).await;
         record(&mut results, &mut result_count, "display_red", pass);
@@ -82,7 +85,12 @@ async fn main(_spawner: Spawner) {
     {
         let mut fb = board.display.fb();
         fb.clear(Rgb888::GREEN);
-        draw_question(&mut fb, "2/5: Solid GREEN", "Is the screen completely green?", s_black);
+        draw_question(
+            &mut fb,
+            "2/5: Solid GREEN",
+            "Is the screen completely green?",
+            s_black,
+        );
         draw_yes_no(&mut fb, s_black, s_white);
         let pass = wait_yes_no(&mut board).await;
         record(&mut results, &mut result_count, "display_green", pass);
@@ -92,7 +100,12 @@ async fn main(_spawner: Spawner) {
     {
         let mut fb = board.display.fb();
         fb.clear(Rgb888::BLUE);
-        draw_question(&mut fb, "3/5: Solid BLUE", "Is the screen completely blue?", s_white);
+        draw_question(
+            &mut fb,
+            "3/5: Solid BLUE",
+            "Is the screen completely blue?",
+            s_white,
+        );
         draw_yes_no(&mut fb, s_black, s_white);
         let pass = wait_yes_no(&mut board).await;
         record(&mut results, &mut result_count, "display_blue", pass);
@@ -110,7 +123,12 @@ async fn main(_spawner: Spawner) {
                 .draw(&mut fb)
                 .ok();
         }
-        draw_question(&mut fb, "4/5: Gradient", "Smooth gradient black to white?", s_yellow);
+        draw_question(
+            &mut fb,
+            "4/5: Gradient",
+            "Smooth gradient black to white?",
+            s_yellow,
+        );
         draw_yes_no(&mut fb, s_black, s_white);
         let pass = wait_yes_no(&mut board).await;
         record(&mut results, &mut result_count, "display_gradient", pass);
@@ -131,15 +149,30 @@ async fn main(_spawner: Spawner) {
             .ok();
 
         let s_gr = MonoTextStyle::new(&FONT_10X20, Rgb888::CSS_GREEN);
-        Text::with_baseline("STM32F469I-DISCO", Point::new(100, 100), s_gr, Baseline::Top)
-            .draw(&mut fb)
-            .ok();
-        Text::with_baseline("480 x 800 RGB888", Point::new(110, 130), s_white, Baseline::Top)
-            .draw(&mut fb)
-            .ok();
-        Text::with_baseline("NT35510 via DSI/LTDC", Point::new(90, 160), s_white, Baseline::Top)
-            .draw(&mut fb)
-            .ok();
+        Text::with_baseline(
+            "STM32F469I-DISCO",
+            Point::new(100, 100),
+            s_gr,
+            Baseline::Top,
+        )
+        .draw(&mut fb)
+        .ok();
+        Text::with_baseline(
+            "480 x 800 RGB888",
+            Point::new(110, 130),
+            s_white,
+            Baseline::Top,
+        )
+        .draw(&mut fb)
+        .ok();
+        Text::with_baseline(
+            "NT35510 via DSI/LTDC",
+            Point::new(90, 160),
+            s_white,
+            Baseline::Top,
+        )
+        .draw(&mut fb)
+        .ok();
 
         for (i, label) in ["TOP", "BOTTOM", "LEFT", "RIGHT"].iter().enumerate() {
             let pos = match i {
@@ -153,10 +186,20 @@ async fn main(_spawner: Spawner) {
                 .ok();
         }
 
-        draw_question(&mut fb, "5/5: Text+Borders", "Readable text + straight borders?", s_yellow);
+        draw_question(
+            &mut fb,
+            "5/5: Text+Borders",
+            "Readable text + straight borders?",
+            s_yellow,
+        );
         draw_yes_no(&mut fb, s_black, s_white);
         let pass = wait_yes_no(&mut board).await;
-        record(&mut results, &mut result_count, "display_text_borders", pass);
+        record(
+            &mut results,
+            &mut result_count,
+            "display_text_borders",
+            pass,
+        );
     }
 
     // ── Phase 2: Touch verification (automated) ─────────────────────
@@ -167,12 +210,19 @@ async fn main(_spawner: Spawner) {
     {
         let mut fb = board.display.fb();
         fb.clear(Rgb888::BLACK);
-        Text::with_baseline("Tap anywhere to continue", Point::new(40, H / 2 - 10), s_white, Baseline::Top)
-            .draw(&mut fb)
-            .ok();
+        Text::with_baseline(
+            "Tap anywhere to continue",
+            Point::new(40, H / 2 - 10),
+            s_white,
+            Baseline::Top,
+        )
+        .draw(&mut fb)
+        .ok();
         info!("TEST touch_detect: RUNNING");
 
-        let detected = wait_any_touch(&mut board, TOUCH_TIMEOUT_SECS).await.is_some();
+        let detected = wait_any_touch(&mut board, TOUCH_TIMEOUT_SECS)
+            .await
+            .is_some();
         record(&mut results, &mut result_count, "touch_detect", detected);
     }
 
@@ -283,7 +333,12 @@ async fn main(_spawner: Spawner) {
             }
         }
 
-        record(&mut results, &mut result_count, "touch_corners", corner_hits == 4);
+        record(
+            &mut results,
+            &mut result_count,
+            "touch_corners",
+            corner_hits == 4,
+        );
     }
 
     // ── Summary ─────────────────────────────────────────────────────
@@ -416,7 +471,12 @@ async fn wait_any_touch(board: &mut Board, timeout_secs: u64) -> Option<(i32, i3
     }
 }
 
-fn record(results: &mut [Option<TestResult>; MAX_TESTS], count: &mut usize, name: &'static str, pass: bool) {
+fn record(
+    results: &mut [Option<TestResult>; MAX_TESTS],
+    count: &mut usize,
+    name: &'static str,
+    pass: bool,
+) {
     if pass {
         info!("TEST {}: PASS", name);
     } else {
