@@ -29,6 +29,16 @@ USB CDC tests can run at 168 MHz with PLLSAI for display coexistence, or standal
 
 `run_hil.sh` is a unified hardware-in-the-loop test runner that executes all three test phases in sequence:
 
+**On the shared bench, always go through the bench wrapper** (`tools/hil/bench.py` — BenchLock FIRST, then the `bsp-f469-hil` labgrid place, 2 MiB image backup/restore around every session; the F469 is flashed by micronuts/gm65/microfips too):
+
+```bash
+make hil-place        # (re)create the labgrid place after coordinator restarts
+make test-hil         # bench-wrapped full battery
+make test-hil-quick   # phases 1-2 (skips the USB serial phase)
+```
+
+Bare `./run_hil.sh` is for when you physically hold the board outside the bench contract. See `tools/hil/README.md`.
+
 | Phase | Method | Tests | Notes |
 |-------|--------|-------|-------|
 | 1 (hil) | `cargo test --test on_target` | 26 embedded-test | probe-rs, per-test device reset |

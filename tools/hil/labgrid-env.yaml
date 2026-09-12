@@ -1,0 +1,18 @@
+# Labgrid environment for the BSP F469 HIL place.
+#
+# Use with the labgrid pytest plugin (the Amperstrand lab deployment):
+#   pytest --lg-env tools/hil/labgrid-env.yaml \
+#          --lg-coordinator 192.168.13.221:20408 <tests> -v
+#
+# The place binds the ST-Link acquisition token exported by the microfips
+# bench exporter — acquiring it reserves the shared F469 and excludes
+# micronuts-qr-rig / gm65-qr-loopback / microfips-bench. Direct I/O stays
+# the working path (BenchLock first, then the place — never reversed;
+# playbook pattern 12).
+imports: []
+targets:
+  main:
+    role: bsp-f469-hil
+    resources:
+      RemotePlace:
+        name: bsp-f469-hil

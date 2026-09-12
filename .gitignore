@@ -6,3 +6,6 @@ hil-results/
 .sisyphus/
 .playwright-mcp/
 .omo/
+
+# bench HIL backups
+tools/hil/results/
