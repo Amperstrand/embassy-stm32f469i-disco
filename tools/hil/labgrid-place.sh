@@ -7,7 +7,7 @@
 # then the place — never reversed; playbook pattern 12).
 set -euo pipefail
 
-COORDINATOR="${LABGRID_COORDINATOR:-192.168.13.221:20408}"
+COORDINATOR="${LABGRID_COORDINATOR:-192.168.13.208:20408}"
 EXPORTER_NAME="${LABGRID_EXPORTER_NAME:-ai-legion-small-microfips}"
 PLACE="bsp-f469-hil"
 LG="${LABGRID_CLIENT:-labgrid-client}"

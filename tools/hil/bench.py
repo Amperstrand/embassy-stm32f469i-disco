@@ -37,7 +37,7 @@ BOARDS_TOML = Path(os.environ.get(
     REPO_ROOT.parent / "fips-lab" / "fips_lab" / "boards.toml",
 ))
 
-COORDINATOR = os.environ.get("LABGRID_COORDINATOR", "192.168.13.221:20408")
+COORDINATOR = os.environ.get("LABGRID_COORDINATOR", "192.168.13.208:20408")
 EXPORTER_NAME = os.environ.get("LABGRID_EXPORTER_NAME", "ai-legion-small-microfips")
 PLACE = "bsp-f469-hil"
 BACKUP_DIR = Path(__file__).parent / "results"

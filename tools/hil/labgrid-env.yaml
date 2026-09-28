@@ -2,7 +2,7 @@
 #
 # Use with the labgrid pytest plugin (the Amperstrand lab deployment):
 #   pytest --lg-env tools/hil/labgrid-env.yaml \
-#          --lg-coordinator 192.168.13.221:20408 <tests> -v
+#          --lg-coordinator 192.168.13.208:20408 <tests> -v
 #
 # The place binds the ST-Link acquisition token exported by the microfips
 # bench exporter — acquiring it reserves the shared F469 and excludes
