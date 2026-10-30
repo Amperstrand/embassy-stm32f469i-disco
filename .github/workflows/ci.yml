@@ -110,8 +110,16 @@ jobs:
         run: cargo doc --target thumbv7em-none-eabihf --all-features --no-deps
 
   package:
+    # Gated off pending #33: cargo package unconditionally requires every
+    # dependency to have a version (git deps are rewritten to registry deps
+    # at packaging time) and `nt35510` is git-pinned — 0.2.1 is not on
+    # crates.io yet. Neither --no-verify (skips the post-unpack build) nor
+    # --allow-dirty (skips the VCS check) addresses that error class, so the
+    # job is skipped instead of carried permanently red with misleading
+    # flags. Re-enable after nt35510 0.2.1 is published and the dep switched
+    # to `version = "0.2.1"`; the command below is already the honest form.
+    if: false
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -131,4 +139,4 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Package dry-run
-        run: cargo package --no-verify --allow-dirty --target thumbv7em-none-eabihf
+        run: cargo package --target thumbv7em-none-eabihf
