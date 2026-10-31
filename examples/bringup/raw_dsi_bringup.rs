@@ -569,14 +569,14 @@ unsafe fn raw_dsi_write_cmd(address: u8, data: &[u8]) {
         reg32_write(DSI_BASE, DSI_GPDR, word);
 
         if data.len() > 3 {
-            let mut iter = data[3..].chunks_exact(4);
-            for chunk in &mut iter {
-                let w = u32::from_ne_bytes(chunk.try_into().unwrap());
+            let (chunks, remainder) = data[3..].as_chunks::<4>();
+            for chunk in chunks {
+                let w = u32::from_ne_bytes(*chunk);
                 reg32_write(DSI_BASE, DSI_GPDR, w);
             }
-            if !iter.remainder().is_empty() {
+            if !remainder.is_empty() {
                 let mut w = 0u32;
-                for (i, &b) in iter.remainder().iter().enumerate() {
+                for (i, &b) in remainder.iter().enumerate() {
                     w |= (b as u32) << (8 * i);
                 }
                 reg32_write(DSI_BASE, DSI_GPDR, w);

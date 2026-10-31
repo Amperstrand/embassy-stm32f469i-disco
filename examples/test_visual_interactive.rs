@@ -345,7 +345,7 @@ async fn main(_spawner: Spawner) {
 
     let passed = results[..result_count]
         .iter()
-        .filter(|r| r.as_ref().map_or(false, |t| t.passed))
+        .filter(|r| r.as_ref().is_some_and(|t| t.passed))
         .count();
     let total = result_count;
 
